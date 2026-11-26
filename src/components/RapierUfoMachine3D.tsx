@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
-import confetti from 'canvas-confetti';
 import {
   ArrowRight,
   ArrowUp,
@@ -15,16 +14,13 @@ import {
   Camera,
   PackagePlus,
   RotateCcw,
+  Loader2,
   Activity,
-  Trophy,
 } from 'lucide-react';
-import {
-  PRIZE_SPECS,
-  STAGE_PHYSICS,
-  PhysicsTuning,
-  PrizeSpec,
-  getRestingPosition,
-} from '../constants/prizes';
+import { GachaBoxItem } from '@/types/gacha';
+import { GACHA_PHYSICS, getBoxDimensions, getBoxRewardAmount, isBoxAtInitialPose, isPlushSlot } from '@/constants/gacha';
+import { DEFAULT_PHYSICS_TUNING, PhysicsTuning, PRIZE_SPECS, PrizeSpec } from '@/constants/prizes';
+import { isPrizeSpanningRedAndBlueBar } from '@/lib/gachaEffects';
 
 type CameraView = 'front' | 'top' | 'right';
 
@@ -40,33 +36,52 @@ export type CranePhase =
   | 'releasing'
   | 'settling';
 
-export interface MachineSnapshot {
-  hasStock: boolean;
-  position: [number, number, number];
-  quaternion: [number, number, number, number];
-  isInitialState: boolean;
-  plays: number;
-  wins: number;
-}
-
-export interface TelemetryData {
-  headY: number;
-  leftDeg: number;
-  rightDeg: number;
-  prizeY: number;
-  prizeTiltDeg: number;
-  prizeSpeed: number;
-  isInitialState: boolean;
-  rapierVersion: string;
+export interface TurnFinishPayload {
+  wonItemIds: string[];
+  updatedItems: {
+    id: string;
+    position: [number, number, number];
+    quaternion: [number, number, number, number];
+    isInitialState?: boolean;
+  }[];
+  actionSummary: string;
 }
 
 interface RapierUfoMachine3DProps {
+  items: GachaBoxItem[];
+  isMyTurn: boolean;
+  lockedByOther: string | null;
+  turnKey: string | null;
+  onTurnFinish: (payload: TurnFinishPayload) => void;
+  onStartTurnRequest?: () => void;
+  canStartTurn: boolean;
+  selectedMember: string;
+  selectedMemberTickets: number;
+  isStarting: boolean;
+  isFinishing?: boolean;
+  sessionProgress?: { current: number; total: number; bonusPlays: number } | null;
+  otherSessionProgress?: { current: number; total: number } | null;
   machineIndex: number;
-  snapshots: MachineSnapshot[];
-  tuning: PhysicsTuning;
-  onSelectMachine: (idx: number) => void;
-  onUpdateSnapshot: (idx: number, next: MachineSnapshot) => void;
-  onPrizeWon: (spec: PrizeSpec) => void;
+  machineCount: number;
+  machineLabel: string;
+  machineDifficulty: string;
+  machineRewardSol: number;
+  onPrevMachine: () => void;
+  onNextMachine: () => void;
+  onSelectMachine?: (idx: number) => void;
+  machineSummaries?: Array<{
+    index: number;
+    shortName: string;
+    hasStock: boolean;
+    lockedBy: string | null;
+  }>;
+  isAdmin?: boolean;
+  onAdminRefill?: () => void;
+  onAdminReset?: () => void;
+  isRefilling?: boolean;
+  isResetting?: boolean;
+  tuning?: PhysicsTuning;
+  sandboxMode?: boolean;
 }
 
 interface PlushGeoJson {
@@ -116,6 +131,11 @@ function buildBufferGeometryFromPlushData(data: PlushGeoJson): THREE.BufferGeome
   return geo;
 }
 
+function getSpecForSlot(slotIndex: number): PrizeSpec {
+  const safeIdx = ((slotIndex % PRIZE_SPECS.length) + PRIZE_SPECS.length) % PRIZE_SPECS.length;
+  return PRIZE_SPECS[safeIdx];
+}
+
 function createSidePanelTexture(title: string, accent: string, bg: string, rewardSol: number): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = 256;
@@ -140,14 +160,15 @@ function createSidePanelTexture(title: string, accent: string, bg: string, rewar
 
     ctx.fillStyle = '#e2e8f0';
     ctx.font = 'bold 16px monospace';
-    ctx.fillText(`RAPIER 3D · ${rewardSol} SOL`, 128, 88);
+    ctx.fillText(`AIAL PRIZE · ${rewardSol} SOL`, 128, 88);
   }
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
 }
 
-function createFigureFrontTexture(spec: PrizeSpec): THREE.CanvasTexture {
+function createFigureFrontTexture(slotIndex: number, label: string): THREE.CanvasTexture {
+  const spec = getSpecForSlot(slotIndex);
   const cw = spec.isSquare ? 384 : 256;
   const ch = spec.isSquare ? 440 : 512;
   const canvas = document.createElement('canvas');
@@ -194,7 +215,7 @@ function createFigureFrontTexture(spec: PrizeSpec): THREE.CanvasTexture {
 
     ctx.fillStyle = '#fde047';
     ctx.font = `bold ${spec.isSquare ? 17 : 15}px monospace`;
-    ctx.fillText(`${spec.label} · ${spec.rewardSol} SOL`, cw / 2, bannerY + 52);
+    ctx.fillText(`${label} · ${getBoxRewardAmount(slotIndex)} SOL`, cw / 2, bannerY + 52);
 
     ctx.strokeStyle = spec.frontAccent;
     ctx.lineWidth = 10;
@@ -213,11 +234,13 @@ function createFigureFrontTexture(spec: PrizeSpec): THREE.CanvasTexture {
   return tex;
 }
 
-function createFigureBoxMaterials(spec: PrizeSpec): THREE.MeshStandardMaterial[] {
-  const frontTex = createFigureFrontTexture(spec);
-  const sideTex = createSidePanelTexture(spec.title, spec.sideAccent, spec.sideBg, spec.rewardSol);
-  const frontMat = new THREE.MeshStandardMaterial({ map: frontTex, roughness: 0.24, metalness: 0.12 });
-  const sideMat = new THREE.MeshStandardMaterial({ map: sideTex, roughness: 0.30, metalness: 0.20 });
+function createFigureBoxMaterials(slotIndex: number, label: string): THREE.MeshStandardMaterial[] {
+  const spec = getSpecForSlot(slotIndex);
+  const rewardSol = getBoxRewardAmount(slotIndex);
+  const frontTex = createFigureFrontTexture(slotIndex, label);
+  const sideTex = createSidePanelTexture(spec.title, spec.sideAccent, spec.sideBg, rewardSol);
+  const frontMat = new THREE.MeshStandardMaterial({ map: frontTex, roughness: 0.24, metalness: 0.14 });
+  const sideMat = new THREE.MeshStandardMaterial({ map: sideTex, roughness: 0.30, metalness: 0.22 });
   return [sideMat, sideMat, frontMat, frontMat, sideMat, sideMat];
 }
 
@@ -234,7 +257,6 @@ function createPlushMaterial(imgSrc: string): THREE.MeshStandardMaterial {
   });
 }
 
-// Jolt와 동일한 3-세그먼트 곡면 집게 치수 (1:1 공정 비교)
 const ARM_SEGMENTS = [
   { pos: [0.08, -0.19, 0] as const, rotZ: 0.35, half: [0.03, 0.20, 0.045] as const, mass: 0.11, isTip: false },
   { pos: [0.095, -0.52, 0] as const, rotZ: -0.32, half: [0.028, 0.17, 0.055] as const, mass: 0.11, isTip: false },
@@ -253,49 +275,72 @@ const makeGroup = (membership: number, filter: number) =>
   ((membership & 0xffff) << 16) | (filter & 0xffff);
 
 export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
+  items,
+  isMyTurn,
+  lockedByOther,
+  turnKey,
+  onTurnFinish,
+  onStartTurnRequest,
+  canStartTurn,
+  selectedMember,
+  selectedMemberTickets,
+  isStarting,
+  isFinishing = false,
+  sessionProgress = null,
+  otherSessionProgress = null,
   machineIndex,
-  snapshots,
-  tuning,
+  machineCount,
+  machineLabel,
+  machineDifficulty,
+  machineRewardSol,
+  onPrevMachine,
+  onNextMachine,
   onSelectMachine,
-  onUpdateSnapshot,
-  onPrizeWon,
+  machineSummaries = [],
+  isAdmin = false,
+  onAdminRefill,
+  onAdminReset,
+  isRefilling = false,
+  isResetting = false,
+  tuning = DEFAULT_PHYSICS_TUNING,
+  sandboxMode = false,
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const [engineReady, setEngineReady] = useState(false);
   const [engineError, setEngineError] = useState<string | null>(null);
   const [phase, setPhase] = useState<CranePhase>('idle');
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [droppedThisTurn, setDroppedThisTurn] = useState(0);
   const [cameraView, setCameraView] = useState<CameraView>('front');
   const [frontTiptoeDeg, setFrontTiptoeDeg] = useState(0);
   const [showExtremeDrr, setShowExtremeDrr] = useState(false);
   const [showBalanceCatch, setShowBalanceCatch] = useState(false);
-  const [droppedThisTurn, setDroppedThisTurn] = useState(false);
-  const [telemetry, setTelemetry] = useState<TelemetryData>({
-    headY: STAGE_PHYSICS.CLAW_HOME_Y,
-    leftDeg: Math.round((CLAW_OPEN_ANGLE * 180) / Math.PI),
-    rightDeg: Math.round((CLAW_OPEN_ANGLE * 180) / Math.PI),
-    prizeY: 1.08,
-    prizeTiltDeg: 0,
-    prizeSpeed: 0,
-    isInitialState: true,
-    rapierVersion: '0.21',
-  });
+  const [showStartPopup, setShowStartPopup] = useState(false);
+  const [showNearNear, setShowNearNear] = useState(false);
+  const [showFinishWin, setShowFinishWin] = useState(false);
 
   const phaseRef = useRef<CranePhase>('idle');
   const soundEnabledRef = useRef(true);
   const cameraViewRef = useRef<CameraView>('front');
   const frontTiptoeDegRef = useRef(0);
   const tuningRef = useRef<PhysicsTuning>(tuning);
-  const machineIndexRef = useRef(machineIndex);
-  const snapshotsRef = useRef(snapshots);
-  const onUpdateSnapshotRef = useRef(onUpdateSnapshot);
-  const onPrizeWonRef = useRef(onPrizeWon);
-
+  const itemsRef = useRef<GachaBoxItem[]>(items);
+  const onTurnFinishRef = useRef(onTurnFinish);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const drrAudioRef = useRef<HTMLAudioElement | null>(null);
   const bcAudioRef = useRef<HTMLAudioElement | null>(null);
+  const startAudioRef = useRef<HTMLAudioElement | null>(null);
+  const nearAudio1Ref = useRef<HTMLAudioElement | null>(null);
+  const nearAudio2Ref = useRef<HTMLAudioElement | null>(null);
+  const finishAudioRef = useRef<HTMLAudioElement | null>(null);
   const drrTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bcTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const startTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const nearTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const finishTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  itemsRef.current = items;
+  tuningRef.current = tuning;
 
   useEffect(() => {
     soundEnabledRef.current = soundEnabled;
@@ -307,35 +352,29 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
     frontTiptoeDegRef.current = frontTiptoeDeg;
   }, [frontTiptoeDeg]);
   useEffect(() => {
-    tuningRef.current = tuning;
-  }, [tuning]);
-  useEffect(() => {
-    machineIndexRef.current = machineIndex;
-  }, [machineIndex]);
-  useEffect(() => {
-    snapshotsRef.current = snapshots;
-  }, [snapshots]);
-  useEffect(() => {
-    onUpdateSnapshotRef.current = onUpdateSnapshot;
-  }, [onUpdateSnapshot]);
-  useEffect(() => {
-    onPrizeWonRef.current = onPrizeWon;
-  }, [onPrizeWon]);
+    onTurnFinishRef.current = onTurnFinish;
+  }, [onTurnFinish]);
 
   useEffect(() => {
-    const drr = new Audio('/assets/drr.mp3');
-    drr.preload = 'auto';
-    drr.volume = 0.85;
-    drrAudioRef.current = drr;
-
-    const bc = new Audio('/assets/bc.mp3');
-    bc.preload = 'auto';
-    bc.volume = 0.9;
-    bcAudioRef.current = bc;
+    const mkAudio = (src: string, vol = 0.88) => {
+      const a = new Audio(src);
+      a.preload = 'auto';
+      a.volume = vol;
+      return a;
+    };
+    drrAudioRef.current = mkAudio('/assets/drr.mp3', 0.85);
+    bcAudioRef.current = mkAudio('/assets/bc.mp3', 0.9);
+    startAudioRef.current = mkAudio('/assets/start.mp3', 0.88);
+    nearAudio1Ref.current = mkAudio('/assets/nearnear.mp3', 0.9);
+    nearAudio2Ref.current = mkAudio('/assets/nearnear2.mp3', 0.9);
+    finishAudioRef.current = mkAudio('/assets/finish.mp3', 0.92);
 
     return () => {
       if (drrTimeoutRef.current) clearTimeout(drrTimeoutRef.current);
       if (bcTimeoutRef.current) clearTimeout(bcTimeoutRef.current);
+      if (startTimeoutRef.current) clearTimeout(startTimeoutRef.current);
+      if (nearTimeoutRef.current) clearTimeout(nearTimeoutRef.current);
+      if (finishTimeoutRef.current) clearTimeout(finishTimeoutRef.current);
     };
   }, []);
 
@@ -389,23 +428,99 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
     }
   }, []);
 
-  const fireWinConfetti = useCallback(() => {
-    confetti({
-      particleCount: 90,
-      spread: 80,
-      origin: { y: 0.6 },
-      colors: ['#10b981', '#34d399', '#fbbf24', '#22d3ee', '#a855f7', '#fb7185'],
-    });
+  const triggerStartPopup = useCallback(() => {
+    setShowStartPopup(true);
+    if (startTimeoutRef.current) clearTimeout(startTimeoutRef.current);
+    startTimeoutRef.current = setTimeout(() => setShowStartPopup(false), 1200);
+    if (soundEnabledRef.current && startAudioRef.current) {
+      try {
+        startAudioRef.current.currentTime = 0;
+        startAudioRef.current.play().catch(() => {});
+      } catch {}
+    }
   }, []);
 
-  const simBridgeRef = useRef<{
-    loadMachine: (idx: number, snap: MachineSnapshot) => void;
-    resetClawHome: () => void;
-    applyLiveTuning: (t: PhysicsTuning) => void;
-    rebuildCurrentPrizeForTuning: () => void;
-    startTurn: () => void;
+  const triggerNearNear = useCallback(() => {
+    setShowNearNear(true);
+    if (nearTimeoutRef.current) clearTimeout(nearTimeoutRef.current);
+    nearTimeoutRef.current = setTimeout(() => setShowNearNear(false), 1600);
+    if (soundEnabledRef.current) {
+      const pick = Math.random() < 0.5 ? nearAudio1Ref.current : nearAudio2Ref.current;
+      if (pick) {
+        try {
+          pick.currentTime = 0;
+          pick.play().catch(() => {});
+        } catch {}
+      }
+    }
+  }, []);
+
+  const triggerFinishWin = useCallback(() => {
+    setShowFinishWin(true);
+    if (finishTimeoutRef.current) clearTimeout(finishTimeoutRef.current);
+    finishTimeoutRef.current = setTimeout(() => setShowFinishWin(false), 2000);
+    if (soundEnabledRef.current && finishAudioRef.current) {
+      try {
+        finishAudioRef.current.currentTime = 0;
+        finishAudioRef.current.play().catch(() => {});
+      } catch {}
+    }
+  }, []);
+
+  const simControlRef = useRef<{
+    syncFromItems: (nextItems: GachaBoxItem[]) => void;
+    resetClawToHome: () => void;
+    prepareTurnStart: (nextItems: GachaBoxItem[]) => void;
     startDescending: () => void;
+    applyLiveTuning: (t: PhysicsTuning) => void;
+    rebuildPrizesForTuning: () => void;
   } | null>(null);
+
+  useEffect(() => {
+    if (isMyTurn && turnKey && engineReady) {
+      setCameraView('front');
+      cameraViewRef.current = 'front';
+      setDroppedThisTurn(0);
+      simControlRef.current?.prepareTurnStart(itemsRef.current);
+      setCranePhase('ready_right');
+      triggerStartPopup();
+    } else if (!isMyTurn && phaseRef.current !== 'idle') {
+      setCranePhase('idle');
+    }
+  }, [isMyTurn, turnKey, engineReady, setCranePhase, triggerStartPopup]);
+
+  useEffect(() => {
+    if (engineReady && !isMyTurn && !isFinishing && phaseRef.current === 'idle') {
+      simControlRef.current?.syncFromItems(items);
+    }
+  }, [items, engineReady, isMyTurn, isFinishing]);
+
+  useEffect(() => {
+    if (engineReady && !isMyTurn && !isFinishing && phaseRef.current === 'idle') {
+      setDroppedThisTurn(0);
+      simControlRef.current?.resetClawToHome();
+      simControlRef.current?.syncFromItems(itemsRef.current);
+    }
+  }, [machineIndex, engineReady, isMyTurn, isFinishing]);
+
+  useEffect(() => {
+    if (engineReady) {
+      simControlRef.current?.applyLiveTuning(tuning);
+    }
+  }, [
+    engineReady,
+    tuning.downPressForce,
+    tuning.clawTipFriction,
+    tuning.barRingFriction,
+    tuning.showColliders,
+    tuning,
+  ]);
+
+  useEffect(() => {
+    if (engineReady && phaseRef.current === 'idle') {
+      simControlRef.current?.rebuildPrizesForTuning();
+    }
+  }, [engineReady, tuning.massScale, tuning.useComOffset]);
 
   useEffect(() => {
     const container = mountRef.current;
@@ -420,11 +535,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
     getRapier()
       .then((Rapier) => {
         if (disposed || !container) return;
-        const rapierVer = Rapier.version();
 
-        // ============================================================
-        // 1. THREE.JS 씬 · 카메라 · 조명 · 아케이드 캐비닛
-        // ============================================================
         const width = container.clientWidth || 720;
         const height = container.clientHeight || 460;
 
@@ -520,7 +631,6 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
         chuteLight.position.set(0, -0.7, 0);
         scene.add(chuteLight);
 
-        // Cabinet Visuals
         const cabinetGroup = new THREE.Group();
         scene.add(cabinetGroup);
 
@@ -550,7 +660,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           metalness: 0.7,
           roughness: 0.2,
         });
-        const pillarX = STAGE_PHYSICS.CABINET_HALF_X + 0.1;
+        const pillarX = GACHA_PHYSICS.CABINET_HALF_X + 0.1;
         [
           [-pillarX, 0.9, -1.48],
           [pillarX, 0.9, -1.48],
@@ -571,17 +681,17 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
         });
 
         const gantryBeam = new THREE.Mesh(
-          new THREE.BoxGeometry(STAGE_PHYSICS.BAR_LENGTH + 0.2, 0.1, 0.14),
+          new THREE.BoxGeometry(GACHA_PHYSICS.BAR_LENGTH + 0.2, 0.1, 0.14),
           new THREE.MeshStandardMaterial({ color: '#64748b', metalness: 0.85, roughness: 0.2 })
         );
-        gantryBeam.position.set(0, 3.25, STAGE_PHYSICS.CLAW_HOME_Z);
+        gantryBeam.position.set(0, 3.25, GACHA_PHYSICS.CLAW_HOME_Z);
         scene.add(gantryBeam);
 
         const trolleyMesh = new THREE.Mesh(
           new THREE.BoxGeometry(0.28, 0.16, 0.24),
           new THREE.MeshStandardMaterial({ color: '#10b981', metalness: 0.75, roughness: 0.2 })
         );
-        trolleyMesh.position.set(STAGE_PHYSICS.CLAW_HOME_X, 3.25, STAGE_PHYSICS.CLAW_HOME_Z);
+        trolleyMesh.position.set(GACHA_PHYSICS.CLAW_HOME_X, 3.25, GACHA_PHYSICS.CLAW_HOME_Z);
         scene.add(trolleyMesh);
 
         const acrylicMat = new THREE.MeshPhysicalMaterial({
@@ -592,18 +702,18 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           metalness: 0.1,
           side: THREE.DoubleSide,
         });
-        const backGlass = new THREE.Mesh(new THREE.PlaneGeometry(STAGE_PHYSICS.BAR_LENGTH + 0.16, 3.4), acrylicMat);
+        const backGlass = new THREE.Mesh(new THREE.PlaneGeometry(GACHA_PHYSICS.BAR_LENGTH + 0.16, 3.4), acrylicMat);
         backGlass.position.set(0, 0.8, -1.46);
         cabinetGroup.add(backGlass);
 
-        [-(STAGE_PHYSICS.CABINET_HALF_X + 0.06), STAGE_PHYSICS.CABINET_HALF_X + 0.06].forEach((sx) => {
+        [-(GACHA_PHYSICS.CABINET_HALF_X + 0.06), GACHA_PHYSICS.CABINET_HALF_X + 0.06].forEach((sx) => {
           const sideGlass = new THREE.Mesh(new THREE.PlaneGeometry(2.94, 3.4), acrylicMat);
           sideGlass.rotation.y = Math.PI / 2;
           sideGlass.position.set(sx, 0.8, 0);
           cabinetGroup.add(sideGlass);
         });
 
-        const rampVisualGeo = new THREE.BoxGeometry(STAGE_PHYSICS.BAR_LENGTH, 0.05, 0.84);
+        const rampVisualGeo = new THREE.BoxGeometry(GACHA_PHYSICS.BAR_LENGTH, 0.05, 0.84);
         const rampVisualMat = new THREE.MeshPhysicalMaterial({
           color: '#10b981',
           transparent: true,
@@ -620,11 +730,10 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
         backRampMesh.rotation.x = 0.72;
         cabinetGroup.add(backRampMesh);
 
-        // 4 Parallel Bars + Physical Silicone Rings
         const barGeo = new THREE.CylinderGeometry(
-          STAGE_PHYSICS.BAR_RADIUS,
-          STAGE_PHYSICS.BAR_RADIUS,
-          STAGE_PHYSICS.BAR_LENGTH,
+          GACHA_PHYSICS.BAR_RADIUS,
+          GACHA_PHYSICS.BAR_RADIUS,
+          GACHA_PHYSICS.BAR_LENGTH,
           24
         );
         barGeo.rotateZ(Math.PI / 2);
@@ -633,7 +742,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           metalness: 0.92,
           roughness: 0.14,
         });
-        const ringGeo = new THREE.TorusGeometry(STAGE_PHYSICS.BAR_RADIUS + 0.009, 0.016, 10, 24);
+        const ringGeo = new THREE.TorusGeometry(GACHA_PHYSICS.BAR_RADIUS + 0.009, 0.016, 10, 24);
         ringGeo.rotateY(Math.PI / 2);
         const redRingMat = new THREE.MeshStandardMaterial({
           color: '#f43f5e',
@@ -649,10 +758,10 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
         });
 
         const allBarSpecs = [
-          { y: STAGE_PHYSICS.BAR_Y, z: -STAGE_PHYSICS.BAR_HALF_Z, isOuter: false },
-          { y: STAGE_PHYSICS.BAR_Y, z: STAGE_PHYSICS.BAR_HALF_Z, isOuter: false },
-          { y: STAGE_PHYSICS.OUTER_BAR_Y, z: -STAGE_PHYSICS.OUTER_BAR_HALF_Z, isOuter: true },
-          { y: STAGE_PHYSICS.OUTER_BAR_Y, z: STAGE_PHYSICS.OUTER_BAR_HALF_Z, isOuter: true },
+          { y: GACHA_PHYSICS.BAR_Y, z: -GACHA_PHYSICS.BAR_HALF_Z, isOuter: false },
+          { y: GACHA_PHYSICS.BAR_Y, z: GACHA_PHYSICS.BAR_HALF_Z, isOuter: false },
+          { y: GACHA_PHYSICS.OUTER_BAR_Y, z: -GACHA_PHYSICS.OUTER_BAR_HALF_Z, isOuter: true },
+          { y: GACHA_PHYSICS.OUTER_BAR_Y, z: GACHA_PHYSICS.OUTER_BAR_HALF_Z, isOuter: true },
         ];
         const ringXPositions = [-1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5];
 
@@ -670,7 +779,6 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           }
         });
 
-        // UFO Head Visual
         const ufoHeadGroup = new THREE.Group();
         scene.add(ufoHeadGroup);
 
@@ -700,29 +808,15 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
         ufoRing.position.set(0, -0.01, 0);
         ufoHeadGroup.add(ufoRing);
 
-        // Rapier3D 네이티브 디버그 라인 렌더러 (world.debugRender() 기반!)
         const debugLinesGeo = new THREE.BufferGeometry();
         const debugLinesMat = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.8 });
         const debugLinesMesh = new THREE.LineSegments(debugLinesGeo, debugLinesMat);
         debugLinesMesh.visible = tuningRef.current.showColliders;
         scene.add(debugLinesMesh);
 
-        const armMetalMat = new THREE.MeshStandardMaterial({
-          color: '#e2e8f0',
-          metalness: 0.88,
-          roughness: 0.18,
-        });
-        const armTipMat = new THREE.MeshStandardMaterial({
-          color: '#f97316',
-          emissive: '#ea580c',
-          emissiveIntensity: 0.3,
-          roughness: 0.65,
-        });
-        const hingePinMat = new THREE.MeshStandardMaterial({
-          color: '#fbbf24',
-          metalness: 0.9,
-          roughness: 0.2,
-        });
+        const armMetalMat = new THREE.MeshStandardMaterial({ color: '#e2e8f0', metalness: 0.88, roughness: 0.18 });
+        const armTipMat = new THREE.MeshStandardMaterial({ color: '#f97316', emissive: '#ea580c', emissiveIntensity: 0.3, roughness: 0.65 });
+        const hingePinMat = new THREE.MeshStandardMaterial({ color: '#fbbf24', metalness: 0.9, roughness: 0.2 });
 
         const buildArmVisual = (side: -1 | 1) => {
           const group = new THREE.Group();
@@ -764,9 +858,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
         );
         scene.add(aimBeam);
 
-        // ============================================================
-        // 2. RAPIER3D RUST/WASM WORLD SETUP (120Hz 고정 타임스텝)
-        // ============================================================
+        // Rapier3D World (120Hz)
         const world = new Rapier.World({ x: 0, y: -9.81, z: 0 });
         world.timestep = 1 / 120;
         world.numSolverIterations = 12;
@@ -779,7 +871,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
         const qBar = { x: 0, y: 0, z: Math.SQRT1_2, w: Math.SQRT1_2 };
         allBarSpecs.forEach(({ y: by, z: bz, isOuter }) => {
           world.createCollider(
-            Rapier.ColliderDesc.cylinder(STAGE_PHYSICS.BAR_LENGTH / 2, STAGE_PHYSICS.BAR_RADIUS)
+            Rapier.ColliderDesc.cylinder(GACHA_PHYSICS.BAR_LENGTH / 2, GACHA_PHYSICS.BAR_RADIUS)
               .setTranslation(0, by, bz)
               .setRotation(qBar)
               .setFriction(isOuter ? 0.34 : 0.28)
@@ -790,7 +882,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
 
           for (const rx of ringXPositions) {
             const col = world.createCollider(
-              Rapier.ColliderDesc.cylinder(0.022, STAGE_PHYSICS.BAR_RADIUS + 0.006)
+              Rapier.ColliderDesc.cylinder(0.022, GACHA_PHYSICS.BAR_RADIUS + 0.006)
                 .setTranslation(rx, by, bz)
                 .setRotation(qBar)
                 .setFriction(isOuter ? 0.55 : tuningRef.current.barRingFriction)
@@ -802,8 +894,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           }
         });
 
-        // 좌우 아크릴 벽
-        [-STAGE_PHYSICS.CABINET_HALF_X - 0.1, STAGE_PHYSICS.CABINET_HALF_X + 0.1].forEach((wx) => {
+        [-GACHA_PHYSICS.CABINET_HALF_X - 0.1, GACHA_PHYSICS.CABINET_HALF_X + 0.1].forEach((wx) => {
           world.createCollider(
             Rapier.ColliderDesc.cuboid(0.1, 2.2, 2.0)
               .setTranslation(wx, 1.0, 0)
@@ -814,10 +905,9 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           );
         });
 
-        // 앞/뒤 경사 가이드
         const qFront = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.72, 0, 0));
         world.createCollider(
-          Rapier.ColliderDesc.cuboid(STAGE_PHYSICS.BAR_LENGTH / 2, 0.03, 0.42)
+          Rapier.ColliderDesc.cuboid(GACHA_PHYSICS.BAR_LENGTH / 2, 0.03, 0.42)
             .setTranslation(0, 1.24, 1.38)
             .setRotation({ x: qFront.x, y: qFront.y, z: qFront.z, w: qFront.w })
             .setFriction(0.22)
@@ -828,7 +918,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
 
         const qBack = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.72, 0, 0));
         world.createCollider(
-          Rapier.ColliderDesc.cuboid(STAGE_PHYSICS.BAR_LENGTH / 2, 0.03, 0.42)
+          Rapier.ColliderDesc.cuboid(GACHA_PHYSICS.BAR_LENGTH / 2, 0.03, 0.42)
             .setTranslation(0, 1.24, -1.38)
             .setRotation({ x: qBack.x, y: qBack.y, z: qBack.z, w: qBack.w })
             .setFriction(0.22)
@@ -837,7 +927,6 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           envBody
         );
 
-        // 하단 WIN 슈트 바닥
         world.createCollider(
           Rapier.ColliderDesc.cuboid(2.2, 0.1, 2.0)
             .setTranslation(0, -1.55, 0)
@@ -847,13 +936,10 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           envBody
         );
 
-        // ============================================================
-        // 3. RAPIER3D 진짜 관절 크레인 체인:
-        //    Gantry(Kin) --PrismaticY--> Carrier --RevoluteX--> Gimbal --RevoluteZ--> Head --2×RevoluteZ--> L/R Arms
-        // ============================================================
-        const homeX = STAGE_PHYSICS.CLAW_HOME_X;
-        const homeY = STAGE_PHYSICS.CLAW_HOME_Y;
-        const homeZ = STAGE_PHYSICS.CLAW_HOME_Z;
+        // Articulated Crane Chain (Prismatic Y -> Gimbal X/Z -> 2× Revolute Z Claw Arms)
+        const homeX = GACHA_PHYSICS.CLAW_HOME_X;
+        const homeY = GACHA_PHYSICS.CLAW_HOME_Y;
+        const homeZ = GACHA_PHYSICS.CLAW_HOME_Z;
 
         const gantryBody = world.createRigidBody(
           Rapier.RigidBodyDesc.kinematicPositionBased().setTranslation(homeX, homeY, homeZ)
@@ -866,9 +952,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
             .setCanSleep(false)
         );
         world.createCollider(
-          Rapier.ColliderDesc.cuboid(0.05, 0.04, 0.05)
-            .setMass(0.35)
-            .setCollisionGroups(makeGroup(G_HEAD, 0)),
+          Rapier.ColliderDesc.cuboid(0.05, 0.04, 0.05).setMass(0.35).setCollisionGroups(makeGroup(G_HEAD, 0)),
           carrierBody
         );
 
@@ -880,9 +964,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
             .setCanSleep(false)
         );
         world.createCollider(
-          Rapier.ColliderDesc.cuboid(0.04, 0.04, 0.04)
-            .setMass(0.25)
-            .setCollisionGroups(makeGroup(G_HEAD, 0)),
+          Rapier.ColliderDesc.cuboid(0.04, 0.04, 0.04).setMass(0.25).setCollisionGroups(makeGroup(G_HEAD, 0)),
           gimbalBody
         );
 
@@ -903,60 +985,30 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           headBody
         );
 
-        // 1) Prismatic Y Winch (Gantry -> Carrier)
-        const winchData = Rapier.JointData.prismatic(
-          { x: 0, y: 0.18, z: 0 },
-          { x: 0, y: 0, z: 0 },
-          { x: 0, y: 1, z: 0 }
-        );
+        const winchData = Rapier.JointData.prismatic({ x: 0, y: 0.18, z: 0 }, { x: 0, y: 0, z: 0 }, { x: 0, y: 1, z: 0 });
         winchData.limitsEnabled = true;
         winchData.limits = [-1.95, 0.18];
-        const winchJoint = world.createImpulseJoint(
-          winchData,
-          gantryBody,
-          carrierBody,
-          true
-        ) as RAPIER.PrismaticImpulseJoint;
+        const winchJoint = world.createImpulseJoint(winchData, gantryBody, carrierBody, true) as RAPIER.PrismaticImpulseJoint;
         winchJoint.configureMotorModel(Rapier.MotorModel.ForceBased);
         winchJoint.setMotorMaxForce(210);
         winchJoint.configureMotorPosition(0, 320, 48);
 
-        // 2) Gimbal X & Z Sway Joints (Carrier -> Gimbal -> UFO Head, Zero Yaw Spin!)
-        const swayXData = Rapier.JointData.revolute(
-          { x: 0, y: 0, z: 0 },
-          { x: 0, y: 0, z: 0 },
-          { x: 1, y: 0, z: 0 }
-        );
+        const swayXData = Rapier.JointData.revolute({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }, { x: 1, y: 0, z: 0 });
         swayXData.limitsEnabled = true;
         swayXData.limits = [-0.26, 0.26];
-        const swayXJoint = world.createImpulseJoint(
-          swayXData,
-          carrierBody,
-          gimbalBody,
-          true
-        ) as RAPIER.RevoluteImpulseJoint;
+        const swayXJoint = world.createImpulseJoint(swayXData, carrierBody, gimbalBody, true) as RAPIER.RevoluteImpulseJoint;
         swayXJoint.configureMotorModel(Rapier.MotorModel.ForceBased);
         swayXJoint.setMotorMaxForce(18);
         swayXJoint.configureMotorPosition(0, 26, 7);
 
-        const swayZData = Rapier.JointData.revolute(
-          { x: 0, y: 0, z: 0 },
-          { x: 0, y: 0.18, z: 0 },
-          { x: 0, y: 0, z: 1 }
-        );
+        const swayZData = Rapier.JointData.revolute({ x: 0, y: 0, z: 0 }, { x: 0, y: 0.18, z: 0 }, { x: 0, y: 0, z: 1 });
         swayZData.limitsEnabled = true;
         swayZData.limits = [-0.34, 0.34];
-        const swayZJoint = world.createImpulseJoint(
-          swayZData,
-          gimbalBody,
-          headBody,
-          true
-        ) as RAPIER.RevoluteImpulseJoint;
+        const swayZJoint = world.createImpulseJoint(swayZData, gimbalBody, headBody, true) as RAPIER.RevoluteImpulseJoint;
         swayZJoint.configureMotorModel(Rapier.MotorModel.ForceBased);
         swayZJoint.setMotorMaxForce(18);
         swayZJoint.configureMotorPosition(0, 24, 6.5);
 
-        // 3) Left & Right Dynamic 3-Segment Claw Arms + Revolute Motor Joints
         const armColliders: RAPIER.Collider[] = [];
         const createClawArm = (side: -1 | 1) => {
           const armBody = world.createRigidBody(
@@ -982,11 +1034,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
             armColliders.push(col);
           }
 
-          const jData = Rapier.JointData.revolute(
-            { x: side * 0.22, y: -0.02, z: 0 },
-            { x: 0, y: 0, z: 0 },
-            { x: 0, y: 0, z: 1 }
-          );
+          const jData = Rapier.JointData.revolute({ x: side * 0.22, y: -0.02, z: 0 }, { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 1 });
           jData.limitsEnabled = true;
           jData.limits = side > 0 ? [-0.10, 1.18] : [-1.18, 0.10];
           const joint = world.createImpulseJoint(jData, headBody, armBody, true) as RAPIER.RevoluteImpulseJoint;
@@ -999,132 +1047,139 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
         const leftArm = createClawArm(-1);
         const rightArm = createClawArm(1);
 
-        // ============================================================
-        // 4. 동적 상품(박스 5종 + 산드로네 3D 쿠션 인형) 생성/교체 관리
-        // ============================================================
-        let activePrizeBody: RAPIER.RigidBody | null = null;
-        let activePrizeMesh: THREE.Mesh | null = null;
-        let activePrizeSpec: PrizeSpec = PRIZE_SPECS[machineIndexRef.current];
-        let activePrizeIsInitial = true;
+        // Dynamic Prize Entities Map (synced to MongoDB GachaBoxItem[])
+        interface PrizeEntity {
+          data: GachaBoxItem;
+          mesh: THREE.Mesh;
+          body: RAPIER.RigidBody;
+        }
+        const prizeEntities = new Map<string, PrizeEntity>();
 
-        const destroyCurrentPrize = () => {
-          if (activePrizeBody) {
-            world.removeRigidBody(activePrizeBody);
-            activePrizeBody = null;
-          }
-          if (activePrizeMesh) {
-            scene.remove(activePrizeMesh);
-            activePrizeMesh.geometry.dispose();
-            if (Array.isArray(activePrizeMesh.material)) {
-              activePrizeMesh.material.forEach((m) => m.dispose());
-            } else {
-              activePrizeMesh.material.dispose();
+        const syncFromItems = (nextItems: GachaBoxItem[], forceRecreate = false) => {
+          const nextIds = new Set(nextItems.map((it) => it.id));
+
+          for (const [id, ent] of prizeEntities.entries()) {
+            if (forceRecreate || !nextIds.has(id)) {
+              world.removeRigidBody(ent.body);
+              scene.remove(ent.mesh);
+              ent.mesh.geometry.dispose();
+              if (Array.isArray(ent.mesh.material)) {
+                ent.mesh.material.forEach((m) => m.dispose());
+              } else {
+                ent.mesh.material.dispose();
+              }
+              prizeEntities.delete(id);
             }
-            activePrizeMesh = null;
           }
-        };
 
-        const spawnPrizeFromSnapshot = (idx: number, snap: MachineSnapshot) => {
-          destroyCurrentPrize();
-          const spec = PRIZE_SPECS[idx] || PRIZE_SPECS[0];
-          activePrizeSpec = spec;
-          activePrizeIsInitial = snap.isInitialState;
-          if (!snap.hasStock) return;
+          const liveTuning = tuningRef.current;
 
-          const t = tuningRef.current;
-          const totalMass = Math.max(0.4, spec.mass * t.massScale);
-          const body = world.createRigidBody(
-            Rapier.RigidBodyDesc.dynamic()
-              .setTranslation(snap.position[0], snap.position[1], snap.position[2])
-              .setRotation({
-                x: snap.quaternion[0],
-                y: snap.quaternion[1],
-                z: snap.quaternion[2],
-                w: snap.quaternion[3],
-              })
-              .setLinearDamping(0.20)
-              .setAngularDamping(0.30)
-              .setCcdEnabled(true)
-          );
+          for (const it of nextItems) {
+            let ent = prizeEntities.get(it.id);
+            if (!ent) {
+              const dims = getBoxDimensions(it.slotIndex);
+              const spec = getSpecForSlot(it.slotIndex);
+              const plushItem = isPlushSlot(it.slotIndex);
+              const totalMass = Math.max(0.4, spec.mass * liveTuning.massScale);
 
-          const prizeGroup = makeGroup(G_PRIZE, G_ENV | G_BAR | G_PRIZE | G_HEAD | G_ARM);
-
-          if (spec.isPlush) {
-            const plushMat = createPlushMaterial(spec.imgSrc);
-            const initGeo = cachedSandroneGeoData
-              ? buildBufferGeometryFromPlushData(cachedSandroneGeoData)
-              : new THREE.BoxGeometry(spec.w * 0.7, spec.h, spec.d * 0.85);
-            const mesh = new THREE.Mesh(initGeo, plushMat);
-            mesh.castShadow = true;
-            mesh.receiveShadow = true;
-            scene.add(mesh);
-            activePrizeMesh = mesh;
-
-            if (!cachedSandroneGeoData) {
-              loadSandronePlushGeoData().then((geoData) => {
-                if (!geoData || disposed || activePrizeMesh !== mesh) return;
-                const nextGeo = buildBufferGeometryFromPlushData(geoData);
-                mesh.geometry.dispose();
-                mesh.geometry = nextGeo;
-              });
-            }
-
-            const parts = [
-              { half: [0.28, 0.21, 0.50], pos: [0.05, 0, 0.02], w: 0.45 },
-              { half: [0.19, 0.18, 0.20], pos: [0.04, 0, -0.44], w: 0.20 },
-              { half: [0.15, 0.16, 0.30], pos: [-0.30, 0, 0.24], w: 0.18 },
-              { half: [0.14, 0.17, 0.28], pos: [0.30, 0, 0.22], w: 0.17 },
-            ];
-            for (const p of parts) {
-              world.createCollider(
-                Rapier.ColliderDesc.cuboid(p.half[0], p.half[1], p.half[2])
-                  .setTranslation(p.pos[0], p.pos[1], p.pos[2])
-                  .setMass(totalMass * (t.useComOffset ? 0.85 : 1.0) * p.w)
-                  .setFriction(spec.friction)
-                  .setRestitution(0)
-                  .setCollisionGroups(prizeGroup),
-                body
+              const body = world.createRigidBody(
+                Rapier.RigidBodyDesc.dynamic()
+                  .setTranslation(it.position[0], it.position[1], it.position[2])
+                  .setRotation({
+                    x: it.quaternion[0],
+                    y: it.quaternion[1],
+                    z: it.quaternion[2],
+                    w: it.quaternion[3],
+                  })
+                  .setLinearDamping(0.20)
+                  .setAngularDamping(0.30)
+                  .setCcdEnabled(true)
               );
+
+              const prizeGroup = makeGroup(G_PRIZE, G_ENV | G_BAR | G_PRIZE | G_HEAD | G_ARM);
+              let mesh: THREE.Mesh;
+
+              if (plushItem) {
+                const plushMat = createPlushMaterial(spec.imgSrc);
+                const initGeo = cachedSandroneGeoData
+                  ? buildBufferGeometryFromPlushData(cachedSandroneGeoData)
+                  : new THREE.BoxGeometry(dims.w * 0.7, dims.h, dims.d * 0.85);
+                mesh = new THREE.Mesh(initGeo, plushMat);
+                mesh.castShadow = true;
+                mesh.receiveShadow = true;
+                scene.add(mesh);
+
+                if (!cachedSandroneGeoData) {
+                  const targetId = it.id;
+                  loadSandronePlushGeoData().then((geoData) => {
+                    if (!geoData || disposed) return;
+                    const liveEnt = prizeEntities.get(targetId);
+                    if (!liveEnt) return;
+                    const nextGeo = buildBufferGeometryFromPlushData(geoData);
+                    liveEnt.mesh.geometry.dispose();
+                    liveEnt.mesh.geometry = nextGeo;
+                  });
+                }
+
+                const parts = [
+                  { half: [0.28, 0.21, 0.50], pos: [0.05, 0, 0.02], w: 0.45 },
+                  { half: [0.19, 0.18, 0.20], pos: [0.04, 0, -0.44], w: 0.20 },
+                  { half: [0.15, 0.16, 0.30], pos: [-0.30, 0, 0.24], w: 0.18 },
+                  { half: [0.14, 0.17, 0.28], pos: [0.30, 0, 0.22], w: 0.17 },
+                ];
+                for (const p of parts) {
+                  world.createCollider(
+                    Rapier.ColliderDesc.cuboid(p.half[0], p.half[1], p.half[2])
+                      .setTranslation(p.pos[0], p.pos[1], p.pos[2])
+                      .setMass(totalMass * (liveTuning.useComOffset ? 0.85 : 1.0) * p.w)
+                      .setFriction(spec.friction)
+                      .setRestitution(0)
+                      .setCollisionGroups(prizeGroup),
+                    body
+                  );
+                }
+              } else {
+                const mats = createFigureBoxMaterials(it.slotIndex, it.label);
+                mesh = new THREE.Mesh(new THREE.BoxGeometry(dims.w, dims.h, dims.d), mats);
+                mesh.castShadow = true;
+                mesh.receiveShadow = true;
+                scene.add(mesh);
+
+                world.createCollider(
+                  Rapier.ColliderDesc.cuboid(dims.w / 2, dims.h / 2, dims.d / 2)
+                    .setMass(totalMass * (liveTuning.useComOffset ? 0.82 : 1.0))
+                    .setFriction(spec.friction)
+                    .setRestitution(0)
+                    .setCollisionGroups(prizeGroup),
+                  body
+                );
+              }
+
+              if (liveTuning.useComOffset) {
+                world.createCollider(
+                  Rapier.ColliderDesc.ball(0.05)
+                    .setTranslation(spec.comOffset[0] * 3.0, spec.comOffset[1] * 3.0, spec.comOffset[2] * 3.0)
+                    .setMass(totalMass * 0.18)
+                    .setCollisionGroups(0),
+                  body
+                );
+              }
+
+              ent = { data: { ...it }, mesh, body };
+              prizeEntities.set(it.id, ent);
             }
-          } else {
-            const mats = createFigureBoxMaterials(spec);
-            const mesh = new THREE.Mesh(new THREE.BoxGeometry(spec.w, spec.h, spec.d), mats);
-            mesh.castShadow = true;
-            mesh.receiveShadow = true;
-            scene.add(mesh);
-            activePrizeMesh = mesh;
 
-            world.createCollider(
-              Rapier.ColliderDesc.cuboid(spec.w / 2, spec.h / 2, spec.d / 2)
-                .setMass(totalMass * (t.useComOffset ? 0.82 : 1.0))
-                .setFriction(spec.friction)
-                .setRestitution(0)
-                .setCollisionGroups(prizeGroup),
-              body
+            ent.data = { ...it };
+            ent.body.setTranslation({ x: it.position[0], y: it.position[1], z: it.position[2] }, false);
+            ent.body.setRotation(
+              { x: it.quaternion[0], y: it.quaternion[1], z: it.quaternion[2], w: it.quaternion[3] },
+              false
             );
-          }
+            ent.body.setLinvel({ x: 0, y: 0, z: 0 }, false);
+            ent.body.setAngvel({ x: 0, y: 0, z: 0 }, false);
 
-          // 편심 무게중심 내부 추(충돌 없음, 순수 질량/관성 오프셋)
-          if (t.useComOffset) {
-            world.createCollider(
-              Rapier.ColliderDesc.ball(0.05)
-                .setTranslation(spec.comOffset[0] * 3.0, spec.comOffset[1] * 3.0, spec.comOffset[2] * 3.0)
-                .setMass(totalMass * 0.18)
-                .setCollisionGroups(0),
-              body
-            );
-          }
-
-          activePrizeBody = body;
-
-          if (activePrizeMesh) {
-            activePrizeMesh.position.set(snap.position[0], snap.position[1], snap.position[2]);
-            activePrizeMesh.quaternion.set(
-              snap.quaternion[0],
-              snap.quaternion[1],
-              snap.quaternion[2],
-              snap.quaternion[3]
-            );
+            ent.mesh.position.set(it.position[0], it.position[1], it.position[2]);
+            ent.mesh.quaternion.set(it.quaternion[0], it.quaternion[1], it.quaternion[2], it.quaternion[3]);
           }
         };
 
@@ -1133,9 +1188,6 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
         const tmpThreeDir = new THREE.Vector3();
         const tmpThreeUp = new THREE.Vector3(0, 1, 0);
         const tmpThreeQuat = new THREE.Quaternion();
-        const tmpHeadQuat = new THREE.Quaternion();
-        const tmpArmQuat = new THREE.Quaternion();
-        const tmpRelQuat = new THREE.Quaternion();
 
         const sim = {
           gantryX: homeX,
@@ -1143,15 +1195,14 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           targetHeadY: homeY,
           phaseTimer: 0,
           settleQuietTime: 0,
-          wonThisTurn: false,
-          turnStartedInitial: true,
-          turnStartPrizePos: [0, 1.1, 0] as [number, number, number],
-          turnStartPrizeQuat: [0, 0, 0, 1] as [number, number, number, number],
-          liftStartPrizeY: 1.1,
+          wonSet: new Set<string>(),
+          turnStartPositions: new Map<string, [number, number, number]>(),
+          turnStartQuats: new Map<string, [number, number, number, number]>(),
+          liftStartY: new Map<string, number>(),
           effectTriggeredThisTurn: false,
+          nearNearTriggeredThisTurn: false,
           lastHeadYForStall: homeY,
           descendStallTimer: 0,
-          telemetryAccum: 0,
           stepAccum: 0,
         };
 
@@ -1165,14 +1216,15 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           rightArm.joint.configureMotorPosition(openRad, 150, 22);
         };
 
-        const resetClawHome = () => {
+        const resetClawToHome = () => {
           sim.gantryX = homeX;
           sim.gantryZ = homeZ;
           sim.targetHeadY = homeY;
           sim.phaseTimer = 0;
           sim.settleQuietTime = 0;
-          sim.wonThisTurn = false;
+          sim.wonSet.clear();
           sim.effectTriggeredThisTurn = false;
+          sim.nearNearTriggeredThisTurn = false;
           sim.descendStallTimer = 0;
 
           const idQ = { x: 0, y: 0, z: 0, w: 1 };
@@ -1211,125 +1263,97 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           setArmTargets(CLAW_OPEN_ANGLE);
         };
 
-        const applyLiveTuning = (t: PhysicsTuning) => {
-          for (const col of armColliders) {
-            col.setFriction(t.clawTipFriction);
+        const prepareTurnStart = (nextItems: GachaBoxItem[]) => {
+          resetClawToHome();
+          syncFromItems(nextItems, false);
+          sim.turnStartPositions.clear();
+          sim.turnStartQuats.clear();
+          for (const ent of prizeEntities.values()) {
+            sim.turnStartPositions.set(ent.data.id, [...ent.data.position] as [number, number, number]);
+            sim.turnStartQuats.set(ent.data.id, [...ent.data.quaternion] as [number, number, number, number]);
           }
-          for (const col of redRingColliders) {
-            col.setFriction(t.barRingFriction);
-          }
-          debugLinesMesh.visible = t.showColliders;
-        };
-
-        const finishTurn = () => {
-          const idx = machineIndexRef.current;
-          const prevSnap = snapshotsRef.current[idx];
-          let nextSnap: MachineSnapshot;
-
-          if (sim.wonThisTurn || !activePrizeBody) {
-            destroyCurrentPrize();
-            nextSnap = {
-              hasStock: false,
-              position: getRestingPosition(activePrizeSpec),
-              quaternion: [0, 0, 0, 1],
-              isInitialState: false,
-              plays: (prevSnap?.plays || 0) + 1,
-              wins: (prevSnap?.wins || 0) + (sim.wonThisTurn ? 1 : 0),
-            };
-          } else {
-            const bp = activePrizeBody.translation();
-            const bq = activePrizeBody.rotation();
-            const movedHoriz =
-              Math.hypot(bp.x - sim.turnStartPrizePos[0], bp.z - sim.turnStartPrizePos[2]) > 0.025 ||
-              Math.abs(bp.y - sim.turnStartPrizePos[1]) > 0.035;
-            const quatDot = Math.abs(
-              bq.x * sim.turnStartPrizeQuat[0] +
-                bq.y * sim.turnStartPrizeQuat[1] +
-                bq.z * sim.turnStartPrizeQuat[2] +
-                bq.w * sim.turnStartPrizeQuat[3]
-            );
-            const stillInitial = sim.turnStartedInitial && !movedHoriz && quatDot >= 0.999;
-            activePrizeIsInitial = stillInitial;
-
-            nextSnap = {
-              hasStock: true,
-              position: [bp.x, bp.y, bp.z],
-              quaternion: [bq.x, bq.y, bq.z, bq.w],
-              isInitialState: stillInitial,
-              plays: (prevSnap?.plays || 0) + 1,
-              wins: prevSnap?.wins || 0,
-            };
-          }
-
-          setCranePhase('idle');
-          onUpdateSnapshotRef.current(idx, nextSnap);
-        };
-
-        const startTurn = () => {
-          if (phaseRef.current !== 'idle' || !activePrizeBody) return;
-          setCameraView('front');
-          cameraViewRef.current = 'front';
-          setDroppedThisTurn(false);
-          resetClawHome();
-
-          const bp = activePrizeBody.translation();
-          const bq = activePrizeBody.rotation();
-          sim.turnStartedInitial = activePrizeIsInitial;
-          sim.turnStartPrizePos = [bp.x, bp.y, bp.z];
-          sim.turnStartPrizeQuat = [bq.x, bq.y, bq.z, bq.w];
-
-          setCranePhase('ready_right');
-          playTone(523.25, 0.12, 'sine', 0.1);
         };
 
         const startDescending = () => {
           sim.phaseTimer = 0;
           sim.descendStallTimer = 0;
           sim.lastHeadYForStall = headBody.translation().y;
-          // 하강 중에는 집게 힌지 토크를 유연하게 낮춰, 한쪽이 상자에 걸려도 부드럽게 휘어지며 크레인이 끝까지 하강!
+          for (const ent of prizeEntities.values()) {
+            ent.body.wakeUp();
+          }
           setArmTorques(tuningRef.current.descendFlexTorque);
           setArmTargets(CLAW_OPEN_ANGLE);
-          // Prismatic 하강 중에는 중력 + 누르기 힘 제한(약 18N 중력 + downPressForce)
           winchJoint.setMotorMaxForce(tuningRef.current.downPressForce + 18);
           setCranePhase('descending');
           playTone(640, 0.12);
         };
 
-        simBridgeRef.current = {
-          loadMachine: (idx, snap) => {
-            resetClawHome();
-            spawnPrizeFromSnapshot(idx, snap);
-            setDroppedThisTurn(false);
-            setCranePhase('idle');
-          },
-          resetClawHome,
-          applyLiveTuning,
-          rebuildCurrentPrizeForTuning: () => {
-            if (!activePrizeBody || phaseRef.current !== 'idle') return;
-            const bp = activePrizeBody.translation();
-            const bq = activePrizeBody.rotation();
-            spawnPrizeFromSnapshot(machineIndexRef.current, {
-              hasStock: true,
-              position: [bp.x, bp.y, bp.z],
-              quaternion: [bq.x, bq.y, bq.z, bq.w],
-              isInitialState: activePrizeIsInitial,
-              plays: snapshotsRef.current[machineIndexRef.current]?.plays || 0,
-              wins: snapshotsRef.current[machineIndexRef.current]?.wins || 0,
-            });
-          },
-          startTurn,
-          startDescending,
+        const applyLiveTuning = (t: PhysicsTuning) => {
+          for (const col of armColliders) col.setFriction(t.clawTipFriction);
+          for (const col of redRingColliders) col.setFriction(t.barRingFriction);
+          debugLinesMesh.visible = t.showColliders;
         };
 
-        spawnPrizeFromSnapshot(
-          machineIndexRef.current,
-          snapshotsRef.current[machineIndexRef.current]
-        );
+        const rebuildPrizesForTuning = () => {
+          if (prizeEntities.size === 0) return;
+          const liveItems: GachaBoxItem[] = Array.from(prizeEntities.values()).map((ent) => {
+            const p = ent.body.translation();
+            const q = ent.body.rotation();
+            return {
+              ...ent.data,
+              position: [p.x, p.y, p.z],
+              quaternion: [q.x, q.y, q.z, q.w],
+            };
+          });
+          syncFromItems(liveItems, true);
+        };
+
+        const finishTurn = () => {
+          const wonItemIds = Array.from(sim.wonSet);
+          const updatedItems = Array.from(prizeEntities.values()).map((ent) => {
+            const bp = ent.body.translation();
+            const bq = ent.body.rotation();
+            const startPos = sim.turnStartPositions.get(ent.data.id) || ent.data.position;
+            const startQuat = sim.turnStartQuats.get(ent.data.id) || ent.data.quaternion;
+            const wasInitial = isBoxAtInitialPose(ent.data);
+            const movedHoriz =
+              Math.hypot(bp.x - startPos[0], bp.z - startPos[2]) > 0.025 ||
+              Math.abs(bp.y - startPos[1]) > 0.035;
+            const quatDot = Math.abs(
+              bq.x * startQuat[0] + bq.y * startQuat[1] + bq.z * startQuat[2] + bq.w * startQuat[3]
+            );
+            const nextIsInitial = wasInitial && !movedHoriz && quatDot >= 0.999;
+            ent.data.isInitialState = nextIsInitial;
+
+            return {
+              id: ent.data.id,
+              position: [bp.x, bp.y, bp.z] as [number, number, number],
+              quaternion: [bq.x, bq.y, bq.z, bq.w] as [number, number, number, number],
+              isInitialState: nextIsInitial,
+            };
+          });
+
+          setCranePhase('idle');
+          onTurnFinishRef.current({
+            wonItemIds,
+            updatedItems,
+            actionSummary: wonItemIds.length > 0 ? `${wonItemIds.length}개 획득` : '위치 이동',
+          });
+        };
+
+        simControlRef.current = {
+          syncFromItems: (nextItems) => syncFromItems(nextItems, false),
+          resetClawToHome,
+          prepareTurnStart,
+          startDescending,
+          applyLiveTuning,
+          rebuildPrizesForTuning,
+        };
+
+        syncFromItems(itemsRef.current, false);
+        resetClawToHome();
         setEngineReady(true);
 
-        // ============================================================
-        // 5. MAIN 60FPS RENDER + 120Hz RAPIER3D FIXED-TIMESTEP LOOP
-        // ============================================================
         let lastTime = performance.now();
 
         const animate = (now: number) => {
@@ -1342,22 +1366,19 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           const curPhase = phaseRef.current;
 
           if (curPhase === 'moving_right') {
-            sim.gantryX = Math.min(STAGE_PHYSICS.CLAW_MAX_X, sim.gantryX + STAGE_PHYSICS.MOVE_SPEED_X * dt);
-            if (sim.gantryX >= STAGE_PHYSICS.CLAW_MAX_X) {
+            sim.gantryX = Math.min(GACHA_PHYSICS.CLAW_MAX_X, sim.gantryX + GACHA_PHYSICS.MOVE_SPEED_X * dt);
+            if (sim.gantryX >= GACHA_PHYSICS.CLAW_MAX_X) {
               setCranePhase('ready_up');
               playTone(620, 0.08);
             }
           } else if (curPhase === 'moving_up') {
-            sim.gantryZ = Math.max(STAGE_PHYSICS.CLAW_MIN_Z, sim.gantryZ - STAGE_PHYSICS.MOVE_SPEED_Z * dt);
-            if (sim.gantryZ <= STAGE_PHYSICS.CLAW_MIN_Z) {
+            sim.gantryZ = Math.max(GACHA_PHYSICS.CLAW_MIN_Z, sim.gantryZ - GACHA_PHYSICS.MOVE_SPEED_Z * dt);
+            if (sim.gantryZ <= GACHA_PHYSICS.CLAW_MIN_Z) {
               startDescending();
             }
           } else if (curPhase === 'descending') {
             sim.phaseTimer += dt;
-            sim.targetHeadY = Math.max(
-              STAGE_PHYSICS.CLAW_DROP_Y,
-              sim.targetHeadY - STAGE_PHYSICS.CLAW_DESCEND_SPEED * dt
-            );
+            sim.targetHeadY = Math.max(GACHA_PHYSICS.CLAW_DROP_Y, sim.targetHeadY - 0.64 * dt);
             winchJoint.setMotorMaxForce(tuningRef.current.downPressForce + 18);
 
             const actualHeadY = headBody.translation().y;
@@ -1368,7 +1389,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
               sim.lastHeadYForStall = actualHeadY;
             }
 
-            if (sim.targetHeadY <= STAGE_PHYSICS.CLAW_DROP_Y || sim.descendStallTimer >= 0.45) {
+            if (sim.targetHeadY <= GACHA_PHYSICS.CLAW_DROP_Y || sim.descendStallTimer >= 0.45) {
               sim.phaseTimer = 0;
               setArmTorques(tuningRef.current.closeTorque);
               setCranePhase('closing');
@@ -1383,7 +1404,10 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
             if (sim.phaseTimer >= 0.62) {
               sim.phaseTimer = 0;
               sim.effectTriggeredThisTurn = false;
-              sim.liftStartPrizeY = activePrizeBody ? activePrizeBody.translation().y : 1.0;
+              sim.liftStartY.clear();
+              for (const ent of prizeEntities.values()) {
+                sim.liftStartY.set(ent.data.id, ent.body.translation().y);
+              }
               winchJoint.setMotorMaxForce(220);
               setArmTorques(tuningRef.current.liftTorque);
               setArmTargets(CLAW_CLOSE_TARGET);
@@ -1392,42 +1416,45 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
             }
           } else if (curPhase === 'lifting') {
             sim.phaseTimer += dt;
-            sim.targetHeadY = Math.min(
-              STAGE_PHYSICS.CLAW_LIFT_Y,
-              sim.targetHeadY + STAGE_PHYSICS.CLAW_LIFT_SPEED * dt
-            );
+            sim.targetHeadY = Math.min(GACHA_PHYSICS.CLAW_LIFT_Y, sim.targetHeadY + 1.22 * dt);
             winchJoint.setMotorMaxForce(220);
 
-            if (activePrizeBody && !sim.effectTriggeredThisTurn && !sim.wonThisTurn && sim.phaseTimer >= 0.12) {
-              const curPrizeY = activePrizeBody.translation().y;
-              const curPrizeVelY = activePrizeBody.linvel().y;
-              const liftedDelta = curPrizeY - sim.liftStartPrizeY;
-              const isPhysicallyLifting = liftedDelta >= 0.065 && curPrizeVelY > 0.05;
-
-              if (isPhysicallyLifting) {
-                const hp = headBody.translation();
-                if (sim.turnStartedInitial) {
-                  const centerDx = Math.abs(hp.x - sim.turnStartPrizePos[0]);
-                  const centerDz = Math.abs(hp.z - sim.turnStartPrizePos[2]);
-                  const maxCenterDx = Math.max(0.20, activePrizeSpec.w * 0.30);
-                  const maxCenterDz = Math.min(0.24, Math.max(0.20, activePrizeSpec.d * 0.16));
-                  if (centerDx <= maxCenterDx && centerDz <= maxCenterDz) {
-                    sim.effectTriggeredThisTurn = true;
-                    triggerBalanceCatch();
-                  }
-                } else {
-                  const nearCentralRedBar =
-                    Math.abs(hp.z - STAGE_PHYSICS.BAR_HALF_Z) <= 0.28 ||
-                    Math.abs(hp.z + STAGE_PHYSICS.BAR_HALF_Z) <= 0.28;
-                  if (nearCentralRedBar) {
-                    sim.effectTriggeredThisTurn = true;
-                    triggerExtremeDrr();
+            if (!sim.effectTriggeredThisTurn && sim.phaseTimer >= 0.12) {
+              const hp = headBody.translation();
+              for (const ent of prizeEntities.values()) {
+                if (sim.wonSet.has(ent.data.id)) continue;
+                const startY = sim.liftStartY.get(ent.data.id) ?? ent.data.position[1];
+                const curY = ent.body.translation().y;
+                const velY = ent.body.linvel().y;
+                if (curY - startY >= 0.065 && velY > 0.05) {
+                  const isInit = isBoxAtInitialPose(ent.data);
+                  const dims = getBoxDimensions(ent.data.slotIndex);
+                  if (isInit) {
+                    const startPos = sim.turnStartPositions.get(ent.data.id) || ent.data.position;
+                    const centerDx = Math.abs(hp.x - startPos[0]);
+                    const centerDz = Math.abs(hp.z - startPos[2]);
+                    const maxCenterDx = Math.max(0.20, dims.w * 0.30);
+                    const maxCenterDz = Math.min(0.24, Math.max(0.20, dims.d * 0.16));
+                    if (centerDx <= maxCenterDx && centerDz <= maxCenterDz) {
+                      sim.effectTriggeredThisTurn = true;
+                      triggerBalanceCatch();
+                      break;
+                    }
+                  } else {
+                    const nearCentralRedBar =
+                      Math.abs(hp.z - GACHA_PHYSICS.BAR_HALF_Z) <= 0.28 ||
+                      Math.abs(hp.z + GACHA_PHYSICS.BAR_HALF_Z) <= 0.28;
+                    if (nearCentralRedBar) {
+                      sim.effectTriggeredThisTurn = true;
+                      triggerExtremeDrr();
+                      break;
+                    }
                   }
                 }
               }
             }
 
-            if (sim.targetHeadY >= STAGE_PHYSICS.CLAW_LIFT_Y || sim.phaseTimer >= 1.35) {
+            if (sim.targetHeadY >= GACHA_PHYSICS.CLAW_LIFT_Y || sim.phaseTimer >= 1.35) {
               sim.phaseTimer = 0;
               setArmTorques(tuningRef.current.closeTorque);
               setArmTargets(CLAW_OPEN_ANGLE);
@@ -1452,15 +1479,17 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
             sim.gantryZ += (homeZ - sim.gantryZ) * Math.min(1, 4.5 * dt);
             sim.targetHeadY += (homeY - sim.targetHeadY) * Math.min(1, 4.5 * dt);
 
-            let quiet = true;
-            if (activePrizeBody && !sim.wonThisTurn) {
-              const v = activePrizeBody.linvel();
-              const av = activePrizeBody.angvel();
+            let allQuiet = true;
+            for (const ent of prizeEntities.values()) {
+              if (sim.wonSet.has(ent.data.id)) continue;
+              const v = ent.body.linvel();
+              const av = ent.body.angvel();
               if (Math.hypot(v.x, v.y, v.z) > 0.05 || Math.hypot(av.x, av.y, av.z) > 0.08) {
-                quiet = false;
+                allQuiet = false;
+                break;
               }
             }
-            if (quiet) sim.settleQuietTime += dt;
+            if (allQuiet) sim.settleQuietTime += dt;
             else sim.settleQuietTime = 0;
 
             if (sim.settleQuietTime >= 0.55 || sim.phaseTimer >= 4.2) {
@@ -1468,20 +1497,71 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
             }
           }
 
-          // Kinematic Gantry + Prismatic Winch 타겟 갱신 + 120Hz 고정 스텝 실행
-          gantryBody.setNextKinematicTranslation({ x: sim.gantryX, y: homeY, z: sim.gantryZ });
-          winchJoint.configureMotorPosition(sim.targetHeadY - homeY, 320, 48);
+          if (curPhase !== 'idle') {
+            gantryBody.setNextKinematicTranslation({ x: sim.gantryX, y: homeY, z: sim.gantryZ });
+            winchJoint.configureMotorPosition(sim.targetHeadY - homeY, 320, 48);
 
-          sim.stepAccum += dt;
-          const fixedStep = 1 / 120;
-          let steps = 0;
-          while (sim.stepAccum >= fixedStep && steps < 6) {
-            world.step();
-            sim.stepAccum -= fixedStep;
-            steps++;
+            const isAimingPhase =
+              curPhase === 'ready_right' ||
+              curPhase === 'moving_right' ||
+              curPhase === 'ready_up' ||
+              curPhase === 'moving_up';
+            if (isAimingPhase) {
+              for (const ent of prizeEntities.values()) {
+                const sp = sim.turnStartPositions.get(ent.data.id) || ent.data.position;
+                const sq = sim.turnStartQuats.get(ent.data.id) || ent.data.quaternion;
+                ent.body.setTranslation({ x: sp[0], y: sp[1], z: sp[2] }, false);
+                ent.body.setRotation({ x: sq[0], y: sq[1], z: sq[2], w: sq[3] }, false);
+                ent.body.setLinvel({ x: 0, y: 0, z: 0 }, false);
+                ent.body.setAngvel({ x: 0, y: 0, z: 0 }, false);
+              }
+            }
+
+            sim.stepAccum += dt;
+            const fixedStep = 1 / 120;
+            let steps = 0;
+            while (sim.stepAccum >= fixedStep && steps < 6) {
+              world.step();
+              sim.stepAccum -= fixedStep;
+              steps++;
+            }
+
+            if (!isAimingPhase) {
+              for (const ent of prizeEntities.values()) {
+                const pp = ent.body.translation();
+                const pq = ent.body.rotation();
+                ent.mesh.position.set(pp.x, pp.y, pp.z);
+                ent.mesh.quaternion.set(pq.x, pq.y, pq.z, pq.w);
+
+                if (!sim.wonSet.has(ent.data.id) && pp.y < GACHA_PHYSICS.DROP_Y_THRESHOLD) {
+                  sim.wonSet.add(ent.data.id);
+                  setDroppedThisTurn(sim.wonSet.size);
+                  triggerFinishWin();
+                } else if (
+                  !sim.wonSet.has(ent.data.id) &&
+                  !sim.nearNearTriggeredThisTurn &&
+                  (curPhase === 'releasing' || curPhase === 'settling') &&
+                  sim.phaseTimer >= 0.22
+                ) {
+                  const dims = getBoxDimensions(ent.data.slotIndex);
+                  if (isPrizeSpanningRedAndBlueBar(pp, pq, dims, GACHA_PHYSICS.DROP_Y_THRESHOLD)) {
+                    sim.nearNearTriggeredThisTurn = true;
+                    triggerNearNear();
+                  }
+                }
+              }
+            }
           }
 
-          // Three.js 비주얼 1:1 동기화
+          if (tuningRef.current.showColliders) {
+            const { vertices, colors } = world.debugRender();
+            debugLinesGeo.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+            debugLinesGeo.setAttribute('color', new THREE.BufferAttribute(colors, 4));
+            debugLinesMesh.visible = true;
+          } else {
+            debugLinesMesh.visible = false;
+          }
+
           const hp = headBody.translation();
           const hq = headBody.rotation();
           ufoHeadGroup.position.set(hp.x, hp.y, hp.z);
@@ -1510,32 +1590,6 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           tmpThreeQuat.setFromUnitVectors(tmpThreeUp, tmpThreeDir);
           cableMesh.quaternion.copy(tmpThreeQuat);
 
-          if (activePrizeBody && activePrizeMesh) {
-            const pp = activePrizeBody.translation();
-            const pq = activePrizeBody.rotation();
-            activePrizeMesh.position.set(pp.x, pp.y, pp.z);
-            activePrizeMesh.quaternion.set(pq.x, pq.y, pq.z, pq.w);
-
-            if (!sim.wonThisTurn && pp.y < STAGE_PHYSICS.DROP_Y_THRESHOLD) {
-              sim.wonThisTurn = true;
-              setDroppedThisTurn(true);
-              playTone(783.99, 0.14, 'sine', 0.12);
-              setTimeout(() => playTone(1046.5, 0.25, 'sine', 0.12), 110);
-              fireWinConfetti();
-              onPrizeWonRef.current(activePrizeSpec);
-            }
-          }
-
-          // Rapier3D 네이티브 콜라이더 와이어프레임 디버그 렌더
-          if (tuningRef.current.showColliders) {
-            const { vertices, colors } = world.debugRender();
-            debugLinesGeo.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
-            debugLinesGeo.setAttribute('color', new THREE.BufferAttribute(colors, 4));
-            debugLinesMesh.visible = true;
-          } else {
-            debugLinesMesh.visible = false;
-          }
-
           const showAim =
             curPhase === 'ready_right' ||
             curPhase === 'moving_right' ||
@@ -1544,10 +1598,10 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           aimRing.visible = showAim;
           aimBeam.visible = showAim;
           if (showAim) {
-            aimRing.position.set(hp.x, STAGE_PHYSICS.BAR_Y + 0.12, hp.z);
-            const beamH = Math.max(0.2, hp.y - (STAGE_PHYSICS.BAR_Y + 0.12));
+            aimRing.position.set(hp.x, GACHA_PHYSICS.BAR_Y + 0.12, hp.z);
+            const beamH = Math.max(0.2, hp.y - (GACHA_PHYSICS.BAR_Y + 0.12));
             aimBeam.scale.y = beamH / 1.7;
-            aimBeam.position.set(hp.x, STAGE_PHYSICS.BAR_Y + 0.12 + beamH / 2, hp.z);
+            aimBeam.position.set(hp.x, GACHA_PHYSICS.BAR_Y + 0.12 + beamH / 2, hp.z);
           }
 
           const desiredPose = getCameraPose(
@@ -1560,45 +1614,6 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           camera.position.lerp(desiredPose.pos, lerpAlpha);
           currentLookAt.lerp(desiredPose.look, lerpAlpha);
           camera.lookAt(currentLookAt);
-
-          // 텔레메트리 HUD (10Hz)
-          sim.telemetryAccum += rawDt;
-          if (sim.telemetryAccum >= 0.1) {
-            sim.telemetryAccum = 0;
-            tmpHeadQuat.set(hq.x, hq.y, hq.z, hq.w).invert();
-
-            tmpArmQuat.set(lq.x, lq.y, lq.z, lq.w);
-            tmpRelQuat.copy(tmpHeadQuat).multiply(tmpArmQuat);
-            const leftRad = Math.abs(2 * Math.atan2(tmpRelQuat.z, tmpRelQuat.w));
-
-            tmpArmQuat.set(rq.x, rq.y, rq.z, rq.w);
-            tmpRelQuat.copy(tmpHeadQuat).multiply(tmpArmQuat);
-            const rightRad = Math.abs(2 * Math.atan2(tmpRelQuat.z, tmpRelQuat.w));
-
-            let prizeY = 0;
-            let prizeTiltDeg = 0;
-            let prizeSpeed = 0;
-            if (activePrizeBody) {
-              const pp = activePrizeBody.translation();
-              const pq = activePrizeBody.rotation();
-              const pv = activePrizeBody.linvel();
-              prizeY = pp.y;
-              prizeSpeed = Math.hypot(pv.x, pv.y, pv.z);
-              tmpThreeQuat.set(pq.x, pq.y, pq.z, pq.w);
-              tmpThreeDir.set(0, 1, 0).applyQuaternion(tmpThreeQuat);
-              prizeTiltDeg = Math.round((Math.acos(Math.max(-1, Math.min(1, tmpThreeDir.y))) * 180) / Math.PI);
-            }
-            setTelemetry({
-              headY: Number(hp.y.toFixed(2)),
-              leftDeg: Math.round((leftRad * 180) / Math.PI),
-              rightDeg: Math.round((rightRad * 180) / Math.PI),
-              prizeY: Number(prizeY.toFixed(2)),
-              prizeTiltDeg,
-              prizeSpeed: Number(prizeSpeed.toFixed(2)),
-              isInitialState: activePrizeIsInitial,
-              rapierVersion: rapierVer,
-            });
-          }
 
           renderer!.render(scene, camera);
         };
@@ -1630,38 +1645,9 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
         } catch {}
       }
     };
-  }, [playTone, setCranePhase, triggerExtremeDrr, triggerBalanceCatch, fireWinConfetti]);
+  }, [playTone, setCranePhase, triggerExtremeDrr, triggerBalanceCatch, triggerNearNear, triggerFinishWin]);
 
-  useEffect(() => {
-    if (!engineReady || !simBridgeRef.current) return;
-    simBridgeRef.current.loadMachine(machineIndex, snapshotsRef.current[machineIndex]);
-  }, [machineIndex, engineReady]);
-
-  useEffect(() => {
-    if (!engineReady || !simBridgeRef.current) return;
-    simBridgeRef.current.applyLiveTuning(tuning);
-  }, [
-    engineReady,
-    tuning.downPressForce,
-    tuning.clawTipFriction,
-    tuning.barRingFriction,
-    tuning.showColliders,
-    tuning,
-  ]);
-
-  useEffect(() => {
-    if (!engineReady || !simBridgeRef.current) return;
-    simBridgeRef.current.rebuildCurrentPrizeForTuning();
-  }, [engineReady, tuning.massScale, tuning.useComOffset]);
-
-  const currentSpec = PRIZE_SPECS[machineIndex];
-  const currentSnap = snapshots[machineIndex];
-  const isPlaying = phase !== 'idle';
-
-  const handleStartTurn = useCallback(() => {
-    if (!engineReady || phaseRef.current !== 'idle' || !currentSnap.hasStock) return;
-    simBridgeRef.current?.startTurn();
-  }, [engineReady, currentSnap.hasStock]);
+  const isCraneLockedToFront = isMyTurn || isFinishing || phase !== 'idle';
 
   const handleRightPressStart = (e: React.SyntheticEvent) => {
     e.preventDefault();
@@ -1700,37 +1686,13 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
   const handleUpPressEnd = (e: React.SyntheticEvent) => {
     e.preventDefault();
     if (phaseRef.current === 'moving_up') {
-      simBridgeRef.current?.startDescending();
+      simControlRef.current?.startDescending();
     }
-  };
-
-  const handleRealign = () => {
-    if (isPlaying) return;
-    const freshSnap: MachineSnapshot = {
-      ...currentSnap,
-      hasStock: true,
-      position: getRestingPosition(currentSpec),
-      quaternion: [0, 0, 0, 1],
-      isInitialState: true,
-    };
-    onUpdateSnapshot(machineIndex, freshSnap);
-    simBridgeRef.current?.loadMachine(machineIndex, freshSnap);
-    playTone(587.33, 0.09, 'sine', 0.08);
-  };
-
-  const handleRefill = () => {
-    if (isPlaying || currentSnap.hasStock) return;
-    handleRealign();
   };
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.repeat) return;
-      if (e.code === 'Space' && phaseRef.current === 'idle' && snapshotsRef.current[machineIndexRef.current]?.hasStock) {
-        e.preventDefault();
-        simBridgeRef.current?.startTurn();
-        return;
-      }
       if ((e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') && phaseRef.current === 'ready_right') {
         e.preventDefault();
         if (cameraViewRef.current !== 'front') {
@@ -1759,7 +1721,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
         playTone(520, 0.08);
       } else if ((e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') && phaseRef.current === 'moving_up') {
         e.preventDefault();
-        simBridgeRef.current?.startDescending();
+        simControlRef.current?.startDescending();
       }
     };
 
@@ -1772,13 +1734,12 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
   }, [playTone, setCranePhase]);
 
   const phaseBannerText = (() => {
-    if (engineError) return `❌ Rapier3D 초기화 실패: ${engineError}`;
-    if (!engineReady) return '⚙️ Rapier3D Rust WASM 엔진 로딩 중...';
+    if (engineError) return `❌ Rapier3D 초기화 오류: ${engineError}`;
+    if (!engineReady) return '⚙️ Rapier3D Rust WASM 물리 엔진 로딩 중...';
+    if (lockedByOther) return `🔒 현재 ${lockedByOther}님이 크레인을 조작 중입니다...`;
     switch (phase) {
       case 'idle':
-        return currentSnap.hasStock
-          ? '하단 [뽑기 시작] 또는 Space를 눌러 실제 Rapier3D 물리 크레인을 조작하세요!'
-          : '📦 품절 상태입니다. 우측 상단 [뽑기판 리필]을 눌러 상품을 채우세요!';
+        return '하단 [뽑기 시작]을 눌러 Rapier3D UFO 브릿지 크레인을 조작하세요!';
       case 'ready_right':
         return '1단계: [➡ 우측 이동] 버튼을 꾹 눌렀다가 원하는 X 위치에서 떼세요!';
       case 'moving_right':
@@ -1786,33 +1747,32 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
       case 'ready_up':
         return '2단계: [⬆ 안쪽(위) 이동] 버튼을 꾹 눌렀다가 원하는 Z 위치에서 떼세요!';
       case 'moving_up':
-        return '⬆ 안쪽으로 이동 중... 손을 떼면 즉시 하강합니다!';
+        return '⬆ 안쪽으로 이동 중... 손을 떼면 즉시 하강하여 집게가 작동합니다!';
       case 'descending':
-        return '⬇ Prismatic 윈치 + 2축 짐벌 크레인 하강 중 (한쪽이 걸려도 유연하게 끝까지 하강!)';
+        return '⬇ Prismatic 윈치 크레인이 하강하고 있습니다...';
       case 'closing':
-        return '🤏 실제 Revolute 토크 모터 관절로 집게를 오므리는 중...';
+        return '🤏 실제 Revolute 모터 집게로 상자를 잡는 중...';
       case 'lifting':
-        return '⬆ 순수 Rapier3D 물리 마찰·토크로 상품을 들어올리고 있습니다!';
+        return '⬆ 물리 마찰과 토크로 상자를 들어올리고 있습니다!';
       case 'releasing':
       case 'settling':
-        return droppedThisTurn
-          ? '🎉 중앙 Bar 사이로 통과 성공!! 상품을 획득했습니다!'
-          : '⚖️ 상품이 실리콘 링 Bar 위에서 물리적으로 자리를 잡는 중...';
+        return droppedThisTurn > 0
+          ? '🎉 Bar 사이로 상자가 떨어졌습니다!! 결과 저장 중...'
+          : '⚖️ 상자가 Bar 위에서 흔들리며 자리를 잡는 중...';
     }
   })();
 
   return (
     <div className="w-full rounded-3xl overflow-hidden border border-emerald-500/35 bg-slate-950 shadow-2xl shadow-emerald-950/30">
-      {/* 상단 상태 바 */}
       <div className="px-4 py-2.5 bg-slate-900/95 border-b border-slate-800 space-y-2">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-400/45 text-emerald-300 text-[11px] font-black shrink-0">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-[11px] font-black shrink-0">
               <Sparkles className="w-3 h-3" />
-              {machineIndex + 1}/6번 판
+              {machineIndex + 1}/{machineCount}번 판
             </span>
             <span className="text-xs font-black text-amber-300 shrink-0 hidden sm:inline">
-              {currentSpec.label}
+              {machineLabel}
             </span>
             <span className="text-xs font-bold text-slate-200 truncate">{phaseBannerText}</span>
           </div>
@@ -1827,64 +1787,63 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           </button>
         </div>
 
-        {/* 1~6번 개별 뽑기판 탭 + 우측 리필 / 재정렬 버튼 */}
-        <div className="flex items-center justify-between gap-2 flex-wrap">
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
-            {PRIZE_SPECS.map((spec) => {
-              const isActive = spec.index === machineIndex;
-              const snap = snapshots[spec.index];
-              return (
-                <button
-                  key={spec.index}
-                  type="button"
-                  disabled={isPlaying}
-                  onClick={() => onSelectMachine(spec.index)}
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-[11px] font-bold shrink-0 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
-                    isActive
-                      ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200 shadow-sm'
-                      : 'bg-slate-950/80 hover:bg-slate-800 border-slate-800 text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  <span
-                    className={`w-1.5 h-1.5 rounded-full ${
-                      snap.hasStock ? 'bg-emerald-400' : 'bg-slate-600'
+        {machineSummaries.length > 0 && (
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
+              {machineSummaries.map((ms) => {
+                const isActive = ms.index === machineIndex;
+                return (
+                  <button
+                    key={ms.index}
+                    type="button"
+                    disabled={isCraneLockedToFront}
+                    onClick={() => onSelectMachine?.(ms.index)}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-[11px] font-bold shrink-0 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+                      isActive
+                        ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200 shadow-sm'
+                        : 'bg-slate-950/80 hover:bg-slate-800 border-slate-800 text-slate-400 hover:text-slate-200'
                     }`}
-                  />
-                  <span>{spec.shortName}</span>
-                  {!snap.hasStock && <span className="text-[9px] text-rose-400 font-black">품절</span>}
+                  >
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full ${
+                        ms.lockedBy ? 'bg-rose-400 animate-pulse' : ms.hasStock ? 'bg-emerald-400' : 'bg-slate-600'
+                      }`}
+                    />
+                    <span>{ms.shortName}</span>
+                    {!ms.hasStock && <span className="text-[9px] text-rose-400 font-black">품절</span>}
+                  </button>
+                );
+              })}
+            </div>
+
+            {isAdmin && (
+              <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+                <button
+                  type="button"
+                  onClick={onAdminRefill}
+                  disabled={isRefilling || isResetting || isCraneLockedToFront}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/50 text-emerald-300 text-[11px] font-black cursor-pointer disabled:opacity-45 transition-colors"
+                >
+                  {isRefilling ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PackagePlus className="w-3.5 h-3.5" />}
+                  <span>뽑기판 리필</span>
                 </button>
-              );
-            })}
-          </div>
 
-          <div className="flex items-center gap-1.5 shrink-0 ml-auto">
-            <button
-              type="button"
-              onClick={handleRefill}
-              disabled={isPlaying || currentSnap.hasStock}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/50 text-emerald-300 text-[11px] font-black cursor-pointer disabled:opacity-40 transition-colors"
-              title="품절된 현재 뽑기판 리필"
-            >
-              <PackagePlus className="w-3.5 h-3.5" />
-              <span>뽑기판 리필</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={handleRealign}
-              disabled={isPlaying}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 text-amber-300 text-[11px] font-black cursor-pointer disabled:opacity-40 transition-colors"
-              title="현재 뽑기판 상품을 중앙 원위치로 재정렬"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>뽑기판 재정렬</span>
-            </button>
+                <button
+                  type="button"
+                  onClick={onAdminReset}
+                  disabled={isResetting || isRefilling || isCraneLockedToFront}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 text-amber-300 text-[11px] font-black cursor-pointer disabled:opacity-45 transition-colors"
+                >
+                  {isResetting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
+                  <span>뽑기판 재정렬</span>
+                </button>
+              </div>
+            )}
           </div>
-        </div>
+        )}
       </div>
 
-      {/* 3D WebGL 캔버스 뷰포트 */}
-      <div className="relative w-full h-[320px] sm:h-[470px] bg-[#040c14] select-none">
+      <div className="relative w-full h-[300px] sm:h-[450px] bg-[#040c14] select-none">
         <div ref={mountRef} className="w-full h-full" />
 
         <button
@@ -1904,7 +1863,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
             {cameraView === 'front'
               ? frontTiptoeDeg > 0
                 ? `까치발 +${frontTiptoeDeg}°`
-                : isPlaying
+                : isCraneLockedToFront
                 ? '정면뷰 (조작 고정)'
                 : '정면뷰'
               : cameraView === 'top'
@@ -1914,7 +1873,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
         </button>
 
         <div className="absolute top-2 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5">
-          {!isPlaying && (
+          {!isCraneLockedToFront && (
             <button
               type="button"
               onClick={() => setCameraView((prev) => (prev === 'top' ? 'front' : 'top'))}
@@ -1965,26 +1924,14 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           )}
         </div>
 
-        {/* 우측 상단 실시간 Rapier3D 텔레메트리 HUD */}
-        <div className="absolute top-2.5 right-2.5 z-20 hidden sm:flex flex-col items-end gap-0.5 px-2.5 py-1.5 rounded-xl bg-slate-950/80 border border-emerald-700/60 backdrop-blur-sm font-mono text-[10px] text-slate-300 pointer-events-none">
-          <div className="flex items-center gap-1 text-emerald-300 font-black">
+        {!(isMyTurn && sessionProgress && sessionProgress.total > 1) && (
+          <div className="absolute top-2.5 right-2.5 z-20 hidden sm:inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-950/80 border border-emerald-500/35 text-[10px] font-mono font-bold text-emerald-300 backdrop-blur-sm pointer-events-none">
             <Activity className="w-3 h-3" />
-            <span>Rapier3D {telemetry.rapierVersion} · 120Hz</span>
+            <span>Rapier3D Rust · 120Hz</span>
           </div>
-          <div>
-            집게 L <span className="text-amber-300">{telemetry.leftDeg}°</span> · R{' '}
-            <span className="text-amber-300">{telemetry.rightDeg}°</span>
-          </div>
-          <div>
-            상자 Y <span className="text-emerald-300">{telemetry.prizeY.toFixed(2)}</span> · 기울기{' '}
-            <span className="text-rose-300">{telemetry.prizeTiltDeg}°</span>
-          </div>
-          <div className="text-[9px] text-slate-400">
-            상태: {telemetry.isInitialState ? '초기 원위치 (Balance Catch 가능)' : '이동됨 (극한 드르륵 가능)'}
-          </div>
-        </div>
+        )}
 
-        {!isPlaying && (
+        {!isCraneLockedToFront && (
           <button
             type="button"
             onClick={() => setCameraView((prev) => (prev === 'right' ? 'front' : 'right'))}
@@ -2009,14 +1956,21 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
         )}
 
         <div className="absolute bottom-2.5 left-2.5 pointer-events-none px-2.5 py-1 rounded-lg bg-emerald-950/85 border border-emerald-500/40 text-[10px] sm:text-xs font-bold text-emerald-300 backdrop-blur-sm">
-          🎯 <strong className="text-white">{currentSpec.label}</strong> ({currentSpec.difficultyText}) ·{' '}
-          <span className="text-amber-300 font-mono">{currentSpec.rewardSol} SOL</span>
+          🎯 <strong className="text-white">{machineLabel}</strong> ({machineDifficulty}) · 통과 시{' '}
+          <span className="text-amber-300 font-mono">{machineRewardSol} SOL</span> 당첨!
         </div>
 
-        {droppedThisTurn && (
-          <div className="absolute top-12 left-1/2 -translate-x-1/2 z-30 pointer-events-none px-4 py-1.5 rounded-full bg-amber-500 text-slate-950 font-black text-xs sm:text-sm shadow-lg animate-bounce flex items-center gap-1.5">
-            <Trophy className="w-4 h-4" />
-            <span>🎊 통과 성공!! {currentSpec.label} 획득!</span>
+        {droppedThisTurn > 0 && (
+          <div className="absolute top-11 left-1/2 -translate-x-1/2 z-30 pointer-events-none px-4 py-1.5 rounded-full bg-amber-500 text-slate-950 font-black text-xs sm:text-sm shadow-lg animate-bounce">
+            🎊 통과 성공!! 상자 획득!
+          </div>
+        )}
+
+        {showStartPopup && (
+          <div className="absolute inset-0 z-30 flex items-center justify-center pointer-events-none">
+            <div className="px-6 py-3 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 border-2 border-emerald-100 text-white font-black text-xl sm:text-3xl tracking-tight shadow-[0_0_40px_rgba(16,185,129,0.85)] animate-bounce">
+              🕹️ 뽑기 시작!
+            </div>
           </div>
         )}
 
@@ -2035,28 +1989,88 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
             </div>
           </div>
         )}
+
+        {showNearNear && (
+          <div className="absolute inset-0 z-30 flex items-center justify-center pointer-events-none">
+            <div className="px-6 py-3 rounded-2xl bg-gradient-to-r from-fuchsia-600 via-pink-500 to-rose-500 border-2 border-pink-100 text-white font-black text-xl sm:text-3xl tracking-tight shadow-[0_0_40px_rgba(236,72,153,0.85)] animate-bounce">
+              😱 아슬 아슬!
+            </div>
+          </div>
+        )}
+
+        {showFinishWin && (
+          <div className="absolute inset-0 z-30 flex items-center justify-center pointer-events-none">
+            <div className="px-7 py-3.5 rounded-2xl bg-gradient-to-r from-yellow-400 via-amber-500 to-orange-500 border-2 border-yellow-100 text-slate-950 font-black text-2xl sm:text-4xl tracking-tight shadow-[0_0_50px_rgba(251,191,36,0.95)] animate-bounce">
+              🎉 당첨!
+            </div>
+          </div>
+        )}
+
+        {isMyTurn && sessionProgress && sessionProgress.total > 1 && (
+          <div className="absolute top-2.5 right-2.5 z-20 pointer-events-none px-3 py-1 rounded-xl bg-indigo-950/90 border border-emerald-400/50 text-xs font-black text-emerald-200 shadow-lg backdrop-blur-sm flex items-center gap-1.5">
+            <span>
+              🔥 연속 뽑기 {sessionProgress.current} / {sessionProgress.total}회
+            </span>
+            {sessionProgress.bonusPlays > 0 &&
+              sessionProgress.current > sessionProgress.total - sessionProgress.bonusPlays && (
+                <span className="px-1.5 py-0.5 rounded-md bg-amber-500 text-slate-950 text-[10px] font-black">
+                  🎁 무료 보너스!
+                </span>
+              )}
+          </div>
+        )}
+
+        {lockedByOther && !isMyTurn && (
+          <div className="absolute inset-0 z-10 bg-slate-950/45 backdrop-blur-[1.5px] flex items-center justify-center p-4 pointer-events-auto">
+            <div className="px-5 py-3.5 rounded-2xl bg-slate-900/95 border border-rose-500/60 shadow-2xl text-center space-y-1 max-w-xs">
+              <div className="inline-flex items-center gap-1.5 text-rose-300 text-xs font-black">
+                <span className="w-2 h-2 rounded-full bg-rose-400 animate-ping" />
+                <span>
+                  {otherSessionProgress && otherSessionProgress.total > 1
+                    ? `연속 뽑기 진행 중 (${otherSessionProgress.current}/${otherSessionProgress.total}회)`
+                    : '현재 뽑기 진행 중'}
+                </span>
+              </div>
+              <p className="text-sm font-black text-white">
+                🔒 <span className="text-amber-300">{lockedByOther}</span>님이 뽑기를 진행 중입니다
+              </p>
+              <p className="text-[11px] text-slate-400">
+                완료 후 상자 위치가 반영되면 바로 참여할 수 있습니다.
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* 하단 아케이드 조작 패널 */}
       <div className="p-4 bg-gradient-to-b from-slate-900 to-slate-950 border-t border-slate-800">
         {phase === 'idle' ? (
           <div className="flex flex-col md:flex-row items-center justify-between gap-3">
             <div className="text-xs text-slate-300 text-center md:text-left space-y-0.5">
               <div>
-                엔진: <strong className="text-emerald-300">Rapier3D {telemetry.rapierVersion} (Rust → WASM)</strong> ·{' '}
-                <span className="text-cyan-300 font-bold">무제한 비교 테스트 모드</span>
+                {sandboxMode ? (
+                  <>
+                    모드: <strong className="text-emerald-300">Rapier3D 무료 무한 연습실 (Port 4300)</strong>
+                  </>
+                ) : (
+                  <>
+                    선택된 플레이어: <strong className="text-amber-400">{selectedMember}</strong>{' '}
+                    <span className="text-slate-400">(보유 뽑기권 {selectedMemberTickets}장)</span>
+                  </>
+                )}
               </div>
-              <div className="text-[11px] text-slate-400">
-                현재 판 [{machineIndex + 1}/6]: <strong className="text-white">{currentSpec.label}</strong> · 시도{' '}
-                {currentSnap.plays}회 / 획득 {currentSnap.wins}회
+              <div className="text-[11px] text-emerald-300 font-bold">
+                현재 뽑기판 [{machineIndex + 1}/{machineCount}]:{' '}
+                <span className="text-white">{machineLabel}</span> · {machineDifficulty} ·{' '}
+                <span className="text-amber-300 font-mono">{machineRewardSol} SOL</span>
               </div>
             </div>
 
             <div className="flex items-center gap-2 w-full md:w-auto justify-center">
               <button
                 type="button"
-                onClick={() => onSelectMachine((machineIndex - 1 + PRIZE_SPECS.length) % PRIZE_SPECS.length)}
-                className="inline-flex items-center justify-center gap-1 px-3.5 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-600/80 hover:border-emerald-400/60 text-slate-200 hover:text-emerald-200 font-black text-xs sm:text-sm transition-all active:scale-95 cursor-pointer shrink-0"
+                disabled={isCraneLockedToFront || isStarting}
+                onClick={onPrevMachine}
+                className="inline-flex items-center justify-center gap-1 px-3.5 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-600/80 hover:border-emerald-400/60 text-slate-200 hover:text-emerald-200 font-black text-xs sm:text-sm transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shrink-0"
               >
                 <ChevronLeft className="w-4 h-4" />
                 <span>이전 뽑기</span>
@@ -2064,21 +2078,36 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
 
               <button
                 type="button"
-                disabled={!engineReady || !currentSnap.hasStock}
-                onClick={handleStartTurn}
-                className="flex-1 md:flex-none px-6 py-3 rounded-2xl bg-gradient-to-r from-emerald-400 via-teal-400 to-cyan-400 hover:from-emerald-300 hover:to-cyan-300 text-slate-950 font-black text-xs sm:text-sm shadow-lg shadow-emerald-500/25 transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap"
+                disabled={!engineReady || !canStartTurn || isStarting || isFinishing || !!lockedByOther || items.length === 0}
+                onClick={() => {
+                  if (cameraViewRef.current !== 'front') {
+                    setCameraView('front');
+                    cameraViewRef.current = 'front';
+                  }
+                  onStartTurnRequest?.();
+                }}
+                className="flex-1 md:flex-none px-5 sm:px-6 py-3 rounded-2xl bg-gradient-to-r from-emerald-400 via-teal-400 to-cyan-400 hover:from-emerald-300 hover:to-cyan-300 text-slate-950 font-black text-xs sm:text-sm shadow-lg shadow-emerald-500/25 transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap"
               >
                 {!engineReady
-                  ? '⚙️ Rapier3D 로딩 중...'
-                  : !currentSnap.hasStock
-                  ? '📦 품절 (리필 클릭)'
-                  : '🕹️ 뽑기 시작! (Space)'}
+                  ? '⚙️ 물리 엔진 준비 중...'
+                  : isFinishing
+                  ? '💾 위치 저장 중...'
+                  : isStarting
+                  ? '크레인 준비 중...'
+                  : lockedByOther
+                  ? `🔒 ${lockedByOther}님 진행 중...`
+                  : items.length === 0
+                  ? '📦 품절 (리필 대기)'
+                  : selectedMemberTickets < 1
+                  ? '뽑기권 부족'
+                  : '🕹️ 뽑기 시작!'}
               </button>
 
               <button
                 type="button"
-                onClick={() => onSelectMachine((machineIndex + 1) % PRIZE_SPECS.length)}
-                className="inline-flex items-center justify-center gap-1 px-3.5 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-600/80 hover:border-emerald-400/60 text-slate-200 hover:text-emerald-200 font-black text-xs sm:text-sm transition-all active:scale-95 cursor-pointer shrink-0"
+                disabled={isCraneLockedToFront || isStarting}
+                onClick={onNextMachine}
+                className="inline-flex items-center justify-center gap-1 px-3.5 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-600/80 hover:border-emerald-400/60 text-slate-200 hover:text-emerald-200 font-black text-xs sm:text-sm transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shrink-0"
               >
                 <span>다음 뽑기</span>
                 <ChevronRight className="w-4 h-4" />
