@@ -2134,7 +2134,7 @@ export default function App() {
                         📌 261126 공지
                       </span>
                       <span className="text-xs sm:text-sm font-bold text-white truncate">
-                        Rapier3D 물리 엔진 적용 · 효과음 & 버그 수정
+                        12종 뽑기판 확장 · 실시간 관전(LIVE) · Rapier3D 업그레이드
                       </span>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
@@ -2152,19 +2152,31 @@ export default function App() {
                       <p className="flex items-start gap-2">
                         <Sparkles className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
                         <span>
-                          UFO 뽑기 물리 엔진이 <strong className="text-emerald-300">Rapier3D (Rust WASM · 120Hz)</strong>로 전면 업그레이드되었습니다. <strong className="text-white">2축 짐벌 케이블, 실제 토크 관절 집게, 금속 Bar·실리콘 링 마찰 분리, 상품별 편심 무게중심</strong>을 적용해 실제 오락실에 가까운 물리 손맛을 구현했습니다.
+                          UFO 뽑기 물리 엔진이 <strong className="text-emerald-300">Rapier3D (Rust WASM · 120Hz)</strong>로 전면 업그레이드되었습니다. <strong className="text-white">2축 짐벌 케이블, 실제 토크 관절 집게, 상품 통과폭 맞춤형 중앙 빨간 Bar 간격, 편심 무게중심</strong>으로 실제 오락실 손맛을 구현했습니다.
+                        </span>
+                      </p>
+                      <p className="flex items-start gap-2">
+                        <Gift className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                        <span>
+                          뽑기판이 <strong className="text-amber-300">총 12종(피규어 박스 8종 + 3D 입체 인형 4종)</strong>으로 대폭 확장·랜덤 재배치되었습니다! (노엘 제거 · 페른/루시/렘/시노부 박스 및 <strong className="text-pink-300">키타가와 마린·하쿠네 미쿠·타야마 3D 인형</strong> 추가)
+                        </span>
+                      </p>
+                      <p className="flex items-start gap-2">
+                        <Info className="w-4 h-4 text-violet-400 shrink-0 mt-0.5" />
+                        <span>
+                          상단 UFO 공지 오른쪽에 <strong className="text-violet-300">[뽑기정보]</strong> 버튼이 추가되어 12종 상자·3D 인형의 크기·무게·빨간 Bar 내경·리워드·공략 팁을 한눈에 확인할 수 있습니다.
+                        </span>
+                      </p>
+                      <p className="flex items-start gap-2">
+                        <Radio className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+                        <span>
+                          <strong className="text-cyan-300">실시간 관전(LIVE)</strong> 기능이 적용되었습니다! 다른 멤버가 뽑기를 진행 중일 때 흐린 배경 너머로 크레인과 상품의 움직임을 실시간으로 구경할 수 있습니다.
                         </span>
                       </p>
                       <p className="flex items-start gap-2">
                         <RefreshCw className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
                         <span>
-                          플레이 상황에 맞는 신규 효과음과 팝업이 추가되었습니다. 뽑기 시작 시 <strong className="text-white">뽑기 시작!</strong>, 상품이 파란 Bar와 빨간 Bar 사이에 걸치면 <strong className="text-amber-300">아슬 아슬!</strong>, 낙하 성공 시 <strong className="text-emerald-300">당첨!</strong> 연출이 재생됩니다.
-                        </span>
-                      </p>
-                      <p className="flex items-start gap-2 text-slate-300">
-                        <ShieldCheck className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
-                        <span>
-                          당첨 축하 폭죽(Confetti)이 간헐적으로 화면에 남아 사라지지 않던 버그를 수정했습니다.
+                          신규 효과음·연출(<strong className="text-white">뽑기 시작!</strong> · <strong className="text-amber-300">아슬 아슬!</strong> · <strong className="text-emerald-300">당첨!</strong>) 및 <strong className="text-white">최근 상황 로그 접기/펼치기(10건 페이지네이션)</strong>가 추가되었고, 폭죽 잔상 버그와 점검 중 보안 검증을 강화했습니다.
                         </span>
                       </p>
                     </div>
