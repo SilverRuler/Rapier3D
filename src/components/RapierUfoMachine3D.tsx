@@ -18,7 +18,7 @@ import {
   Activity,
 } from 'lucide-react';
 import { GachaBoxItem } from '@/types/gacha';
-import { GACHA_PHYSICS, getBoxDimensions, getBoxRewardAmount, isBoxAtInitialPose, isPlushSlot } from '@/constants/gacha';
+import { GACHA_PHYSICS, getBoxDimensions, getBoxRewardAmount, getSandboxRedBarHalfZ, isBoxAtInitialPose, isPlushSlot } from '@/constants/gacha';
 import { DEFAULT_PHYSICS_TUNING, PhysicsTuning, PRIZE_SPECS, PrizeSpec } from '@/constants/prizes';
 import { isPrizeSpanningRedAndBlueBar } from '@/lib/gachaEffects';
 
@@ -325,6 +325,8 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
   const cameraViewRef = useRef<CameraView>('front');
   const frontTiptoeDegRef = useRef(0);
   const tuningRef = useRef<PhysicsTuning>(tuning);
+  const targetRedBarHalfZ = sandboxMode ? getSandboxRedBarHalfZ(machineIndex) : GACHA_PHYSICS.BAR_HALF_Z;
+  const redBarHalfZRef = useRef<number>(targetRedBarHalfZ);
   const itemsRef = useRef<GachaBoxItem[]>(items);
   const onTurnFinishRef = useRef(onTurnFinish);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -342,6 +344,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
 
   itemsRef.current = items;
   tuningRef.current = tuning;
+  redBarHalfZRef.current = targetRedBarHalfZ;
 
   useEffect(() => {
     soundEnabledRef.current = soundEnabled;
@@ -475,6 +478,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
     startDescending: () => void;
     applyLiveTuning: (t: PhysicsTuning) => void;
     rebuildPrizesForTuning: () => void;
+    updateRedBarSpacing: (halfZ: number) => void;
   } | null>(null);
 
   useEffect(() => {
@@ -500,12 +504,15 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
   }, [items, engineReady, isMyTurn, isFinishing]);
 
   useEffect(() => {
+    if (engineReady) {
+      simControlRef.current?.updateRedBarSpacing(targetRedBarHalfZ);
+    }
     if (engineReady && !isMyTurn && !isFinishing && phaseRef.current === 'idle') {
       setDroppedThisTurn(0);
       simControlRef.current?.resetClawToHome();
       simControlRef.current?.syncFromItems(itemsRef.current);
     }
-  }, [machineIndex, engineReady, isMyTurn, isFinishing]);
+  }, [machineIndex, targetRedBarHalfZ, engineReady, isMyTurn, isFinishing]);
 
   useEffect(() => {
     if (engineReady) {
@@ -761,25 +768,30 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           roughness: 0.55,
         });
 
+        const initRedHalfZ = redBarHalfZRef.current;
         const allBarSpecs = [
-          { y: GACHA_PHYSICS.BAR_Y, z: -GACHA_PHYSICS.BAR_HALF_Z, isOuter: false },
-          { y: GACHA_PHYSICS.BAR_Y, z: GACHA_PHYSICS.BAR_HALF_Z, isOuter: false },
-          { y: GACHA_PHYSICS.OUTER_BAR_Y, z: -GACHA_PHYSICS.OUTER_BAR_HALF_Z, isOuter: true },
-          { y: GACHA_PHYSICS.OUTER_BAR_Y, z: GACHA_PHYSICS.OUTER_BAR_HALF_Z, isOuter: true },
+          { y: GACHA_PHYSICS.BAR_Y, z: -initRedHalfZ, isOuter: false, sign: -1 as const },
+          { y: GACHA_PHYSICS.BAR_Y, z: initRedHalfZ, isOuter: false, sign: 1 as const },
+          { y: GACHA_PHYSICS.OUTER_BAR_Y, z: -GACHA_PHYSICS.OUTER_BAR_HALF_Z, isOuter: true, sign: -1 as const },
+          { y: GACHA_PHYSICS.OUTER_BAR_Y, z: GACHA_PHYSICS.OUTER_BAR_HALF_Z, isOuter: true, sign: 1 as const },
         ];
         const ringXPositions = [-1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5];
+        const redBarMeshes: Array<{ mesh: THREE.Mesh; sign: -1 | 1 }> = [];
+        const redRingMeshes: Array<{ mesh: THREE.Mesh; sign: -1 | 1 }> = [];
 
-        allBarSpecs.forEach(({ y: by, z: bz, isOuter }) => {
+        allBarSpecs.forEach(({ y: by, z: bz, isOuter, sign }) => {
           const barMesh = new THREE.Mesh(barGeo, barMatVisual);
           barMesh.position.set(0, by, bz);
           barMesh.castShadow = true;
           barMesh.receiveShadow = true;
           cabinetGroup.add(barMesh);
+          if (!isOuter) redBarMeshes.push({ mesh: barMesh, sign });
 
           for (const rx of ringXPositions) {
             const ring = new THREE.Mesh(ringGeo, isOuter ? blueRingMat : redRingMat);
             ring.position.set(rx, by, bz);
             cabinetGroup.add(ring);
+            if (!isOuter) redRingMeshes.push({ mesh: ring, sign });
           }
         });
 
@@ -870,11 +882,13 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
 
         const envBody = world.createRigidBody(Rapier.RigidBodyDesc.fixed());
         const barBody = world.createRigidBody(Rapier.RigidBodyDesc.fixed());
+        const redBarColliderEntries: Array<{ col: RAPIER.Collider; sign: -1 | 1 }> = [];
         const redRingColliders: RAPIER.Collider[] = [];
+        const redRingColliderEntries: Array<{ col: RAPIER.Collider; x: number; sign: -1 | 1 }> = [];
 
         const qBar = { x: 0, y: 0, z: Math.SQRT1_2, w: Math.SQRT1_2 };
-        allBarSpecs.forEach(({ y: by, z: bz, isOuter }) => {
-          world.createCollider(
+        allBarSpecs.forEach(({ y: by, z: bz, isOuter, sign }) => {
+          const barCol = world.createCollider(
             Rapier.ColliderDesc.cylinder(GACHA_PHYSICS.BAR_LENGTH / 2, GACHA_PHYSICS.BAR_RADIUS)
               .setTranslation(0, by, bz)
               .setRotation(qBar)
@@ -883,6 +897,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
               .setCollisionGroups(makeGroup(G_BAR, G_PRIZE)),
             barBody
           );
+          if (!isOuter) redBarColliderEntries.push({ col: barCol, sign });
 
           for (const rx of ringXPositions) {
             const col = world.createCollider(
@@ -894,7 +909,10 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
                 .setCollisionGroups(makeGroup(G_BAR, G_PRIZE)),
               barBody
             );
-            if (!isOuter) redRingColliders.push(col);
+            if (!isOuter) {
+              redRingColliders.push(col);
+              redRingColliderEntries.push({ col, x: rx, sign });
+            }
           }
         });
 
@@ -1345,6 +1363,22 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           });
         };
 
+        const updateRedBarSpacing = (halfZ: number) => {
+          redBarHalfZRef.current = halfZ;
+          for (const item of redBarMeshes) {
+            item.mesh.position.z = item.sign * halfZ;
+          }
+          for (const item of redRingMeshes) {
+            item.mesh.position.z = item.sign * halfZ;
+          }
+          for (const entry of redBarColliderEntries) {
+            entry.col.setTranslationWrtParent({ x: 0, y: GACHA_PHYSICS.BAR_Y, z: entry.sign * halfZ });
+          }
+          for (const entry of redRingColliderEntries) {
+            entry.col.setTranslationWrtParent({ x: entry.x, y: GACHA_PHYSICS.BAR_Y, z: entry.sign * halfZ });
+          }
+        };
+
         simControlRef.current = {
           syncFromItems: (nextItems) => syncFromItems(nextItems, false),
           resetClawToHome,
@@ -1352,6 +1386,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           startDescending,
           applyLiveTuning,
           rebuildPrizesForTuning,
+          updateRedBarSpacing,
         };
 
         syncFromItems(itemsRef.current, false);
@@ -1446,9 +1481,10 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
                       break;
                     }
                   } else {
+                    const activeRedHalfZ = redBarHalfZRef.current;
                     const nearCentralRedBar =
-                      Math.abs(hp.z - GACHA_PHYSICS.BAR_HALF_Z) <= 0.28 ||
-                      Math.abs(hp.z + GACHA_PHYSICS.BAR_HALF_Z) <= 0.28;
+                      Math.abs(hp.z - activeRedHalfZ) <= 0.28 ||
+                      Math.abs(hp.z + activeRedHalfZ) <= 0.28;
                     if (nearCentralRedBar) {
                       sim.effectTriggeredThisTurn = true;
                       triggerExtremeDrr();
@@ -1552,7 +1588,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
                   sim.phaseTimer >= 0.22
                 ) {
                   const dims = getBoxDimensions(ent.data.slotIndex);
-                  if (isPrizeSpanningRedAndBlueBar(pp, pq, dims, GACHA_PHYSICS.DROP_Y_THRESHOLD)) {
+                  if (isPrizeSpanningRedAndBlueBar(pp, pq, dims, GACHA_PHYSICS.DROP_Y_THRESHOLD, redBarHalfZRef.current)) {
                     sim.nearNearTriggeredThisTurn = true;
                     triggerNearNear();
                   }

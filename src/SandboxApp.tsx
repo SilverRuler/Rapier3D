@@ -12,6 +12,7 @@ import {
   GACHA_SLOT_LABELS,
   getBoxRewardAmount,
   getMachineLabel,
+  getSandboxRedBarSpec,
 } from '@/constants/gacha';
 import { GachaBoxItem } from '@/types/gacha';
 import { RapierUfoMachine3D, TurnFinishPayload } from '@/components/RapierUfoMachine3D';
@@ -37,6 +38,7 @@ export default function SandboxApp() {
   const [winLogs, setWinLogs] = useState<WinLogEntry[]>([]);
 
   const currentItems = machineItems[machineIndex] || [];
+  const activeBarSpec = useMemo(() => getSandboxRedBarSpec(machineIndex), [machineIndex]);
 
   const handleStartTurn = useCallback(() => {
     if (activeTurnKey || currentItems.length === 0) return;
@@ -183,9 +185,12 @@ export default function SandboxApp() {
           {showTuning && (
             <section className="lg:col-span-2 p-4 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-3">
               <div className="flex items-center justify-between gap-2 flex-wrap">
-                <h2 className="text-xs sm:text-sm font-black text-white flex items-center gap-1.5">
+                <h2 className="text-xs sm:text-sm font-black text-white flex items-center gap-1.5 flex-wrap">
                   <Sliders className="w-4 h-4 text-emerald-400" />
                   <span>Rapier3D 실시간 물리 파라미터 튜닝</span>
+                  <span className="px-2 py-0.5 rounded-full bg-rose-500/15 border border-rose-400/40 text-rose-200 text-[10px] font-mono">
+                    빨간 Bar 내경 {activeBarSpec.physicsGap.toFixed(2)}m (통과폭 {activeBarSpec.passWidth.toFixed(2)}m · {activeBarSpec.passMode === 'side' ? '옆세우기' : '회전폭'})
+                  </span>
                 </h2>
                 <div className="flex items-center gap-1.5">
                   <button

@@ -11,7 +11,8 @@ export function isPrizeSpanningRedAndBlueBar(
   pos: { x: number; y: number; z: number },
   quat: { x: number; y: number; z: number; w: number },
   dims: { w: number; h: number; d: number },
-  dropYThreshold = -0.28
+  dropYThreshold = -0.28,
+  redBarHalfZ = 0.455
 ): boolean {
   if (pos.y <= dropYThreshold || pos.y > 1.58) return false;
   if (Math.abs(pos.z) < 0.24) return false;
@@ -35,10 +36,10 @@ export function isPrizeSpanningRedAndBlueBar(
   }
 
   const onFrontRedBlue =
-    pos.z >= 0.24 && minZ <= 0.455 + 0.16 && maxZ >= 1.02 - 0.18 && minZ > -0.455 + 0.04;
+    pos.z >= 0.24 && minZ <= redBarHalfZ + 0.16 && maxZ >= 1.02 - 0.18 && minZ > -redBarHalfZ + 0.04;
 
   const onBackRedBlue =
-    pos.z <= -0.24 && maxZ >= -0.455 - 0.16 && minZ <= -1.02 + 0.18 && maxZ < 0.455 - 0.04;
+    pos.z <= -0.24 && maxZ >= -redBarHalfZ - 0.16 && minZ <= -1.02 + 0.18 && maxZ < redBarHalfZ - 0.04;
 
   return onFrontRedBlue || onBackRedBlue;
 }

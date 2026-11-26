@@ -83,6 +83,37 @@ export function getBoxDimensions(slotIndex: number) {
   return GACHA_SLOT_BOX_DIMS[safeIdx];
 }
 
+/**
+ * 4200/4300 테스트서버 전용: 상품별 빨간 중앙 Bar 반간격(Z) 계산
+ * - #1~#4 박스: 회전 통과 폭(w) + 물리 실리콘링 여유 0.058 (시각 토러스 여유 ~0.020)
+ * - #5 바니카(정사각 와이드) & #6 산드로네(입체 인형): 옆세우기 통과 두께(h) + 여유 0.058
+ */
+export function getSandboxRedBarSpec(machineIndex: number): {
+  halfZ: number;
+  passWidth: number;
+  physicsGap: number;
+  passMode: 'width' | 'side';
+} {
+  const safeIdx = normalizeMachineIndex(machineIndex, 0);
+  const dims = getBoxDimensions(safeIdx);
+  const useSidePass = isPlushSlot(safeIdx) || dims.w > dims.d - 0.35;
+  const passWidth = useSidePass ? dims.h : dims.w;
+  const ringRadius = GACHA_PHYSICS.BAR_RADIUS + 0.006; // 0.096
+  const desiredPhysicsGap = passWidth + 0.058;
+  const halfZ = Number((desiredPhysicsGap / 2 + ringRadius).toFixed(3));
+  const physicsGap = Number((halfZ * 2 - ringRadius * 2).toFixed(3));
+  return {
+    halfZ,
+    passWidth,
+    physicsGap,
+    passMode: useSidePass ? 'side' : 'width',
+  };
+}
+
+export function getSandboxRedBarHalfZ(machineIndex: number): number {
+  return getSandboxRedBarSpec(machineIndex).halfZ;
+}
+
 export const GACHA_COLOR_THEMES: GachaColorTheme[] = ['gold', 'cyan', 'rose', 'purple', 'rose', 'gold'];
 
 export const GACHA_DEFAULT_REWARD_AMOUNT = 0.01; // 레거시 기본값
