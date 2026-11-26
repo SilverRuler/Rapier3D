@@ -54,8 +54,8 @@ export interface PhysicsTuning {
 }
 
 export const DEFAULT_PHYSICS_TUNING: PhysicsTuning = {
-  closeTorque: 2.0,
-  liftTorque: 2.0,
+  closeTorque: 5.0,
+  liftTorque: 5.0,
   descendFlexTorque: 4.2,
   downPressForce: 15,
   barRingFriction: 1.19,
@@ -386,6 +386,34 @@ export const PRIZE_SPECS: PrizeSpec[] = [
     mass: 1.34,
     friction: 0.48,
     comOffset: [0.01, -0.02, -0.03],
+  },
+  {
+    index: 12,
+    shortName: '13.마키마(3D)',
+    label: '마키마 3D 인형 #13',
+    title: 'MAKIMA',
+    difficultyText: '난이도 7.5 (3D 인형)',
+    rewardSol: 0.013,
+    imgSrc: '/assets/makima_plush.png',
+    frontAccent: '#fecaca',
+    frontBg: '#991b1b',
+    sideAccent: '#f87171',
+    sideBg: '#450a0a',
+    isSquare: false,
+    isPlush: true,
+    plushGeoSrc: '/assets/makima_plush_geo.json',
+    plushParts: [
+      { pos: [0.0, 0, -0.553], half: [0.242, 0.194, 0.200], w: 0.34 },
+      { pos: [0.011, 0, -0.011], half: [0.131, 0.194, 0.299], w: 0.40 },
+      { pos: [-0.055, 0, 0.542], half: [0.091, 0.194, 0.210], w: 0.26 },
+    ],
+    strategyTip: '상체 팔·땋은 머리 쪽이 넓고 다리 쪽이 슬림한 3D 롱 인형. 다리 끝단을 먼저 중앙 틈새로 떨어뜨려 세우듯 공략하면 효과적입니다.',
+    w: 0.53,
+    h: 0.44,
+    d: 1.54,
+    mass: 1.58,
+    friction: 0.62,
+    comOffset: [0, -0.03, -0.05],
   },
 ];
 

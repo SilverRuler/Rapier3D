@@ -2134,7 +2134,7 @@ export default function App() {
                         📌 261126 공지
                       </span>
                       <span className="text-xs sm:text-sm font-bold text-white truncate">
-                        12종 뽑기판 확장 · 실시간 관전(LIVE) · Rapier3D 업그레이드
+                        13종 뽑기판 확장 · 실시간 관전(LIVE) · Rapier3D 업그레이드
                       </span>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
@@ -2158,13 +2158,13 @@ export default function App() {
                       <p className="flex items-start gap-2">
                         <Gift className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                         <span>
-                          뽑기판이 <strong className="text-amber-300">총 12종(피규어 박스 8종 + 3D 입체 인형 4종)</strong>으로 대폭 확장·랜덤 재배치되었습니다! (노엘 제거 · 페른/루시/렘/시노부 박스 및 <strong className="text-pink-300">키타가와 마린·하쿠네 미쿠·타야마 3D 인형</strong> 추가)
+                          뽑기판이 <strong className="text-amber-300">총 13종(피규어 박스 8종 + 3D 입체 인형 5종)</strong>으로 대폭 확장·랜덤 재배치되었습니다! (노엘 제거 · 페른/루시/렘/시노부 박스 및 <strong className="text-pink-300">키타가와 마린·하쿠네 미쿠·타야마·마키마 3D 인형</strong> 추가)
                         </span>
                       </p>
                       <p className="flex items-start gap-2">
                         <Info className="w-4 h-4 text-violet-400 shrink-0 mt-0.5" />
                         <span>
-                          상단 UFO 공지 오른쪽에 <strong className="text-violet-300">[뽑기정보]</strong> 버튼이 추가되어 12종 상자·3D 인형의 크기·무게·빨간 Bar 내경·리워드·공략 팁을 한눈에 확인할 수 있습니다.
+                          상단 UFO 공지 오른쪽에 <strong className="text-violet-300">[뽑기정보]</strong> 버튼이 추가되어 13종 상자·3D 인형의 크기·무게·빨간 Bar 내경·리워드·공략 팁을 한눈에 확인할 수 있습니다.
                         </span>
                       </p>
                       <p className="flex items-start gap-2">
