@@ -217,7 +217,7 @@ export default function SandboxApp() {
                     <span className="text-slate-300">집게 닫힘 토크 (잡는 힘)</span>
                     <span className="font-mono text-emerald-300">{tuning.closeTorque.toFixed(1)} N·m</span>
                   </div>
-                  <input type="range" min={6} max={24} step={0.5} value={tuning.closeTorque} onChange={(e) => setTuning((t) => ({ ...t, closeTorque: Number(e.target.value) }))} className="w-full accent-emerald-400" />
+                  <input type="range" min={2} max={24} step={0.5} value={tuning.closeTorque} onChange={(e) => setTuning((t) => ({ ...t, closeTorque: Number(e.target.value) }))} className="w-full accent-emerald-400" />
                 </label>
 
                 <label className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1">
@@ -225,7 +225,7 @@ export default function SandboxApp() {
                     <span className="text-slate-300">집게 리프트 유지 토크</span>
                     <span className="font-mono text-amber-300">{tuning.liftTorque.toFixed(1)} N·m</span>
                   </div>
-                  <input type="range" min={5} max={22} step={0.5} value={tuning.liftTorque} onChange={(e) => setTuning((t) => ({ ...t, liftTorque: Number(e.target.value) }))} className="w-full accent-amber-400" />
+                  <input type="range" min={2} max={22} step={0.5} value={tuning.liftTorque} onChange={(e) => setTuning((t) => ({ ...t, liftTorque: Number(e.target.value) }))} className="w-full accent-amber-400" />
                 </label>
 
                 <label className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1">

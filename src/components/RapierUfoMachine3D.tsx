@@ -257,14 +257,15 @@ function createPlushMaterial(imgSrc: string): THREE.MeshStandardMaterial {
   });
 }
 
+// 완전한 <> 다이아몬드 갈고리 형상 (닫힘 시 하단 끝단이 중앙 x≈0에서 맞닿아 틈 없음)
 const ARM_SEGMENTS = [
-  { pos: [0.08, -0.19, 0] as const, rotZ: 0.35, half: [0.03, 0.20, 0.045] as const, mass: 0.11, isTip: false },
-  { pos: [0.095, -0.52, 0] as const, rotZ: -0.32, half: [0.028, 0.17, 0.055] as const, mass: 0.11, isTip: false },
-  { pos: [-0.015, -0.685, 0] as const, rotZ: 0.22, half: [0.068, 0.026, 0.075] as const, mass: 0.08, isTip: true },
+  { pos: [0.09, -0.17, 0] as const, rotZ: 0.49, half: [0.028, 0.195, 0.045] as const, mass: 0.11, isTip: false },
+  { pos: [0.08, -0.50, 0] as const, rotZ: -0.56, half: [0.026, 0.19, 0.052] as const, mass: 0.11, isTip: false },
+  { pos: [-0.10, -0.67, 0] as const, rotZ: 0.14, half: [0.085, 0.024, 0.072] as const, mass: 0.08, isTip: true },
 ];
 
-const CLAW_OPEN_ANGLE = 0.64;
-const CLAW_CLOSE_TARGET = -0.06;
+const CLAW_OPEN_ANGLE = 0.72;
+const CLAW_CLOSE_TARGET = -0.05;
 
 const G_ENV = 1 << 0;
 const G_BAR = 1 << 1;
