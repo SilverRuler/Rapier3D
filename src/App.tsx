@@ -94,6 +94,9 @@ export default function App() {
 
   const [isLeaderboardOpen, setIsLeaderboardOpen] = useState<boolean>(false);
   const [isUfoNoticeOpen, setIsUfoNoticeOpen] = useState<boolean>(false);
+  const [openNotice261126, setOpenNotice261126] = useState<boolean>(true);
+  const [openNotice261125, setOpenNotice261125] = useState<boolean>(false);
+  const [openNotice261124, setOpenNotice261124] = useState<boolean>(false);
   const [selectedNoticeBoxSlot, setSelectedNoticeBoxSlot] = useState<number | null>(null);
   const [isRewardModalOpen, setIsRewardModalOpen] = useState<boolean>(false);
   const [rewardInitialMember, setRewardInitialMember] = useState<string | null>(null);
@@ -1531,12 +1534,12 @@ export default function App() {
       {/* UFO 공지사항 모달 */}
       {isUfoNoticeOpen && (() => {
         const boxSpecs = [
-          { slot: 0, shortName: '1번 프리렌', fullName: '프리렌 박스 #1', difficulty: '5 / 10 (보통)', shortDiff: '난이도 5', nameColor: 'text-sky-300', badgeColor: 'text-emerald-300', activeBorder: 'border-sky-400 bg-sky-500/15 ring-1 ring-sky-400/50', note: '가볍고 컴팩트하여 회전·기울기 공략이 수월한 입문용 상자' },
-          { slot: 1, shortName: '2번 네즈코', fullName: '네즈코 박스 #2', difficulty: '6 / 10 (중상)', shortDiff: '난이도 6', nameColor: 'text-pink-300', badgeColor: 'text-amber-300', activeBorder: 'border-pink-400 bg-pink-500/15 ring-1 ring-pink-400/50', note: '표준 규격과 무게의 정석 아케이드 브릿지 밸런스 상자' },
-          { slot: 2, shortName: '3번 노엘 실바', fullName: '노엘 실바 박스 #3', difficulty: '7 / 10 (어려움)', shortDiff: '난이도 7', nameColor: 'text-blue-300', badgeColor: 'text-orange-300', activeBorder: 'border-blue-400 bg-blue-500/15 ring-1 ring-blue-400/50', note: '두툼하고 길며 묵직해 정밀한 모서리·각도 공략이 필요한 상자' },
-          { slot: 3, shortName: '4번 레제', fullName: '레제 박스 #4', difficulty: '8 / 10 (고난도)', shortDiff: '난이도 8', nameColor: 'text-purple-300', badgeColor: 'text-rose-400', activeBorder: 'border-purple-400 bg-purple-500/15 ring-1 ring-purple-400/50', note: '중앙 Bar 틈새(0.73) 여유가 좁고 가장 길고 무거운 고난도 마스터 상자' },
-          { slot: 4, shortName: '5번 바니카', fullName: '바니카 박스 #5', difficulty: '6.5 / 10 (중상·정사각)', shortDiff: '난이도 6.5', nameColor: 'text-rose-300', badgeColor: 'text-rose-300', activeBorder: 'border-rose-400 bg-rose-500/15 ring-1 ring-rose-400/50', note: '정사각형에 가까운 와이드 스페셜 상자! 평면으로는 안 빠지며 옆으로 세우거나 지그시 눌러 넣는 공략이 유효합니다.' },
-          { slot: 5, shortName: '6번 산드로네(인형)', fullName: '산드로네 쿠션 인형 #6', difficulty: '6.5 / 10 (중상·입체 쿠션)', shortDiff: '난이도 6.5', nameColor: 'text-amber-300', badgeColor: 'text-amber-300', activeBorder: 'border-amber-400 bg-amber-500/15 ring-1 ring-amber-400/50', note: '3D 입체 다이컷 쿠션 인형! 4파츠 복합 물리를 활용해 옆으로 기울이거나 눌러 넣으면 틈새로 쏙 빠집니다.' },
+          { slot: 0, shortName: '1번 프리렌', fullName: '프리렌 박스 #1', difficulty: '5 / 10 (보통)', shortDiff: '난이도 5', note: '가볍고 컴팩트하여 회전·기울기 공략이 수월한 입문용 상자' },
+          { slot: 1, shortName: '2번 네즈코', fullName: '네즈코 박스 #2', difficulty: '6 / 10 (중상)', shortDiff: '난이도 6', note: '표준 규격과 무게의 정석 아케이드 브릿지 밸런스 상자' },
+          { slot: 2, shortName: '3번 노엘 실바', fullName: '노엘 실바 박스 #3', difficulty: '7 / 10 (어려움)', shortDiff: '난이도 7', note: '두툼하고 길며 묵직해 정밀한 모서리·각도 공략이 필요한 상자' },
+          { slot: 3, shortName: '4번 레제', fullName: '레제 박스 #4', difficulty: '8 / 10 (고난도)', shortDiff: '난이도 8', note: '중앙 Bar 틈새(0.73) 여유가 좁고 가장 길고 무거운 고난도 마스터 상자' },
+          { slot: 4, shortName: '5번 바니카', fullName: '바니카 박스 #5', difficulty: '6.5 / 10 (중상·정사각)', shortDiff: '난이도 6.5', note: '정사각형에 가까운 와이드 스페셜 상자! 평면으로는 안 빠지며 옆으로 세우거나 지그시 눌러 넣는 공략이 유효합니다.' },
+          { slot: 5, shortName: '6번 산드로네(인형)', fullName: '산드로네 쿠션 인형 #6', difficulty: '6.5 / 10 (중상·입체 쿠션)', shortDiff: '난이도 6.5', note: '최초의 3D 입체 다이컷 쿠션 인형! 푹신하고 얇은 두께(0.44)와 실루엣 복합 물리를 활용해 옆으로 기울이거나 눌러 넣으면 틈새로 쏙 빠집니다.' },
         ] as const;
 
         const activeSpec = selectedNoticeBoxSlot !== null ? boxSpecs[selectedNoticeBoxSlot] : null;
@@ -1549,17 +1552,17 @@ export default function App() {
             onClick={() => setIsUfoNoticeOpen(false)}
           >
             <div
-              className="bg-slate-900 border border-cyan-500/50 w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+              className="bg-slate-900 border border-slate-700 w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="px-5 py-4 bg-gradient-to-r from-cyan-950/70 via-slate-900 to-slate-900 border-b border-cyan-500/30 flex items-center justify-between shrink-0">
+              <div className="px-5 py-4 bg-gradient-to-r from-emerald-950/60 via-slate-900 to-slate-900 border-b border-emerald-500/25 flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-xl bg-cyan-500/20 border border-cyan-400/40 flex items-center justify-center text-cyan-300">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-400/35 flex items-center justify-center text-emerald-300">
                     <Megaphone className="w-5 h-5" />
                   </div>
                   <div>
                     <h2 className="text-base font-black text-white">UFO 공지사항</h2>
-                    <p className="text-[11px] text-slate-400">Rapier3D Rust WASM 3D UFO 브릿지 뽑기 안내</p>
+                    <p className="text-[11px] text-slate-400">Rapier3D 3D UFO 브릿지 뽑기 업데이트 및 안내</p>
                   </div>
                 </div>
                 <button
@@ -1571,136 +1574,231 @@ export default function App() {
                 </button>
               </div>
 
-              <div className="p-5 space-y-3 overflow-y-auto">
-                <div className="rounded-2xl bg-slate-950/90 border border-cyan-500/45 overflow-hidden">
-                  <div className="px-4 py-3 bg-cyan-500/15 border-b border-slate-800 flex items-center justify-between">
-                    <span className="text-xs sm:text-sm font-black text-cyan-300">📌 261126 공지 (Jolt Physics 엔진 업그레이드)</span>
-                    <span className="text-[11px] text-slate-400 font-mono">2026-11-26</span>
-                  </div>
-                  <div className="p-4 space-y-2.5 text-xs sm:text-sm text-slate-200 leading-relaxed font-medium">
-                    <div className="space-y-2">
-                      <p className="flex items-start gap-2">
-                        <Sparkles className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
-                        <span>
-                          물리 엔진이 <strong className="text-cyan-300">Jolt Physics 3D (C++ WASM · 120Hz)</strong>로 전면 업그레이드되었습니다! 개별 6개 뽑기판(1판 1상품)에서 상단 <strong className="text-cyan-200">1~6번 탭</strong> 또는 하단 <strong className="text-amber-300">[이전 뽑기] / [다음 뽑기]</strong>로 도전하세요.
-                        </span>
-                      </p>
-                      <p className="ml-6 text-[11px] sm:text-xs text-cyan-300/90 font-semibold">
-                        👇 밑에 상자 번호를 누르면 각각의 상자 스펙을 확인할 수 있습니다.
-                      </p>
-                      <div className="ml-6 grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-[11px] sm:text-xs">
-                        {boxSpecs.map((spec) => {
-                          const isSelected = selectedNoticeBoxSlot === spec.slot;
-                          const rewardSol = GACHA_SLOT_REWARD_AMOUNTS[spec.slot];
-                          return (
-                            <button
-                              key={spec.slot}
-                              type="button"
-                              onClick={() =>
-                                setSelectedNoticeBoxSlot((prev) => (prev === spec.slot ? null : spec.slot))
-                              }
-                              className={`px-2.5 py-1.5 rounded-lg border flex items-center justify-between gap-1 text-left transition-all cursor-pointer ${
-                                isSelected ? spec.activeBorder : 'bg-slate-900 border-slate-800 hover:border-slate-600'
-                              }`}
-                            >
-                              <span className={`${spec.nameColor} font-bold truncate`}>{spec.shortName}</span>
-                              <span className={`font-mono font-black ${spec.badgeColor} shrink-0`}>
-                                {spec.shortDiff} · {rewardSol} SOL
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-
-                      {activeSpec && activeDims && activeReward !== null && (
-                        <div className="ml-6 p-3 rounded-xl bg-slate-900/95 border border-cyan-500/40 space-y-2">
-                          <div className="flex items-center justify-between gap-2 border-b border-slate-800 pb-1.5">
-                            <span className={`text-xs font-black ${activeSpec.nameColor}`}>
-                              📦 {activeSpec.fullName} 스펙
-                            </span>
-                            <span className="text-[11px] font-mono font-black text-amber-300">{activeReward} SOL</span>
-                          </div>
-                          <div className="grid grid-cols-2 gap-1.5 text-[11px]">
-                            <div className="px-2 py-1.5 rounded-lg bg-slate-950/90 border border-slate-800">
-                              <span className="text-slate-400 block text-[10px]">목표 난이도</span>
-                              <span className={`font-black font-mono ${activeSpec.badgeColor}`}>{activeSpec.difficulty}</span>
-                            </div>
-                            <div className="px-2 py-1.5 rounded-lg bg-slate-950/90 border border-slate-800">
-                              <span className="text-slate-400 block text-[10px]">무게 (Mass)</span>
-                              <span className="font-black font-mono text-white">{activeDims.mass}</span>
-                            </div>
-                            <div className="px-2 py-1.5 rounded-lg bg-slate-950/90 border border-slate-800 col-span-2">
-                              <span className="text-slate-400 block text-[10px]">규격 — 가로(W) × 높이(H) × 세로 길이(D)</span>
-                              <span className="font-black font-mono text-cyan-200">
-                                {activeDims.w} × {activeDims.h} × {activeDims.d}
-                              </span>
-                              <span className="text-[10px] text-slate-400 ml-1.5">(중앙 Bar 틈새 0.73)</span>
-                            </div>
-                          </div>
-                          <p className="text-[11px] text-slate-300 leading-snug">💡 {activeSpec.note}</p>
-                        </div>
+              <div className="p-5 space-y-3 overflow-y-auto text-xs sm:text-sm text-slate-200">
+                {/* 261126 공지 (오늘 날짜 · 기본 펼침) */}
+                <div className="bg-slate-950/85 rounded-2xl border border-emerald-500/45 overflow-hidden transition-all">
+                  <button
+                    type="button"
+                    onClick={() => setOpenNotice261126(!openNotice261126)}
+                    className="w-full px-4 py-3.5 flex items-center justify-between gap-2 text-left hover:bg-slate-900/60 transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/35 shrink-0">
+                        📌 261126 공지
+                      </span>
+                      <span className="text-xs sm:text-sm font-bold text-white truncate">
+                        Rapier3D 물리 엔진 적용 · 효과음 & 버그 수정
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-[11px] text-slate-400 font-mono hidden sm:inline">2026-11-26</span>
+                      {openNotice261126 ? (
+                        <ChevronUp className="w-4 h-4 text-emerald-400 shrink-0" />
+                      ) : (
+                        <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
                       )}
                     </div>
+                  </button>
 
-                    <p className="flex items-start gap-2">
-                      <RefreshCw className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />
-                      <span>
-                        <strong className="text-purple-300">2축 짐벌 케이블 + 실제 토크 관절 집게</strong>와 <strong className="text-emerald-300">금속 Bar/실리콘 링 마찰 분리 · 편심 무게중심</strong>을 적용해 실제 오락실과 동일한 물리 손맛을 구현했습니다.
-                      </span>
-                    </p>
-                    <p className="flex items-start gap-2">
-                      <Sparkles className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                      <span>
-                        재정렬 원위치 상태에서 정중앙 근처를 들어올리면 <strong className="text-emerald-300">Balance Catch!</strong>, 이후 중앙 빨간 Bar 근처에서 들어올리면 <strong className="text-orange-300">극한 드르륵!</strong> 특수 팝업 및 효과음이 재생됩니다.
-                      </span>
-                    </p>
-                    <p className="flex items-start gap-2">
-                      <Camera className="w-4 h-4 text-sky-400 shrink-0 mt-0.5" />
-                      <span>
-                        항공뷰·측면뷰에서는 조작이 불가하며 뽑기 시작 시 <strong className="text-sky-300">정면뷰로 자동 전환</strong>됩니다. (정면 <strong className="text-emerald-300">까치발 0°~45°</strong>는 조작 중에도 조절 가능)
-                      </span>
-                    </p>
-                    <p className="flex items-start gap-2">
-                      <Coins className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                      <span>
-                        뽑기 리워드는 식사배틀 리워드와 별도로 운영되며, 보유 뽑기 SOL 내에서 <strong className="text-amber-300">직접 수량 신청</strong>(업비트 입금 시 <strong className="text-amber-200">0.02 SOL 이상</strong> 권장) 또는 <strong className="text-emerald-300">0.001 SOL당 뽑기권 1장</strong> 교환이 가능합니다.
-                      </span>
-                    </p>
-                    <p className="flex items-start gap-2 text-slate-300">
-                      <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                      <span>
-                        연속 뽑기 도중 조기 당첨 시 <strong className="text-emerald-300">남은 미사용 뽑기권은 자동 반환</strong>되며, 승점 교환은 신청 가능 리워드 WIN(1WIN 이상)만 가능합니다.
-                      </span>
-                    </p>
-                  </div>
+                  {openNotice261126 && (
+                    <div className="px-4 pb-4 pt-3 space-y-2.5 border-t border-slate-800/80 text-slate-200 leading-relaxed font-medium">
+                      <p className="flex items-start gap-2">
+                        <Sparkles className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                        <span>
+                          UFO 뽑기 물리 엔진이 <strong className="text-emerald-300">Rapier3D (Rust WASM · 120Hz)</strong>로 전면 업그레이드되었습니다. <strong className="text-white">2축 짐벌 케이블, 실제 토크 관절 집게, 금속 Bar·실리콘 링 마찰 분리, 상품별 편심 무게중심</strong>을 적용해 실제 오락실에 가까운 물리 손맛을 구현했습니다.
+                        </span>
+                      </p>
+                      <p className="flex items-start gap-2">
+                        <RefreshCw className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
+                        <span>
+                          플레이 상황에 맞는 신규 효과음과 팝업이 추가되었습니다. 뽑기 시작 시 <strong className="text-white">뽑기 시작!</strong>, 상품이 파란 Bar와 빨간 Bar 사이에 걸치면 <strong className="text-amber-300">아슬 아슬!</strong>, 낙하 성공 시 <strong className="text-emerald-300">당첨!</strong> 연출이 재생됩니다.
+                        </span>
+                      </p>
+                      <p className="flex items-start gap-2 text-slate-300">
+                        <ShieldCheck className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
+                        <span>
+                          당첨 축하 폭죽(Confetti)이 간헐적으로 화면에 남아 사라지지 않던 버그를 수정했습니다.
+                        </span>
+                      </p>
+                    </div>
+                  )}
                 </div>
 
-                <div className="rounded-2xl bg-slate-950/75 border border-slate-800 overflow-hidden">
-                  <div className="px-4 py-2.5 bg-slate-900/70 border-b border-slate-800 flex items-center justify-between">
-                    <span className="text-xs font-black text-slate-300">📌 261124 공지</span>
-                    <span className="text-[11px] text-slate-500 font-mono">2026-11-24</span>
-                  </div>
-                  <div className="p-3.5 space-y-2 text-xs text-slate-300 leading-relaxed font-medium">
-                    <p className="flex items-start gap-2">
-                      <Clock className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                      <span>
-                        뽑기 상품의 재정렬과 refill은 <strong className="text-amber-300">10:30, 14:00, 23:00</strong>에 자동으로 진행됩니다.
+                {/* 261125 공지 (어제 날짜 복구 · 기본 접힘 · 색상 피로도 최소화) */}
+                <div className="bg-slate-950/80 rounded-2xl border border-slate-700/80 overflow-hidden transition-all">
+                  <button
+                    type="button"
+                    onClick={() => setOpenNotice261125(!openNotice261125)}
+                    className="w-full px-4 py-3.5 flex items-center justify-between gap-2 text-left hover:bg-slate-900/60 transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-800 text-cyan-300 border border-slate-700 shrink-0">
+                        📌 261125 공지
                       </span>
-                    </p>
-                    <p className="flex items-start gap-2 text-slate-400">
-                      <Info className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
-                      <span>
-                        불가피한 에러나 억울한 시스템 오류는 관리자에게 요청하면 재정렬 해드립니다.
+                      <span className="text-xs sm:text-sm font-bold text-slate-200 truncate">
+                        개별 6개 뽑기판 개편 · 물리 & 리워드 정책
                       </span>
-                    </p>
-                  </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-[11px] text-slate-500 font-mono hidden sm:inline">2026-11-25</span>
+                      {openNotice261125 ? (
+                        <ChevronUp className="w-4 h-4 text-cyan-400 shrink-0" />
+                      ) : (
+                        <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
+                      )}
+                    </div>
+                  </button>
+
+                  {openNotice261125 && (
+                    <div className="px-4 pb-4 pt-3 space-y-2.5 border-t border-slate-800/80 text-slate-300 leading-relaxed font-medium">
+                      <div className="space-y-2">
+                        <p className="flex items-start gap-2">
+                          <Sparkles className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
+                          <span>
+                            각 상품끼리 충돌 없이 집중 공략할 수 있도록 <strong className="text-cyan-300">개별 6개 뽑기판 (1판 1상품 · 박스 5종 + 입체 쿠션 인형 1종)</strong>으로 개편되었습니다! 상단 <strong className="text-white">1~6번 탭</strong> 또는 하단 <strong className="text-white">[이전 뽑기] / [다음 뽑기]</strong> 버튼으로 원하는 뽑기판을 선택해 도전하세요. (평균 난이도 <strong className="text-white">6.5 중상</strong>)
+                          </span>
+                        </p>
+                        <p className="ml-6 text-[11px] sm:text-xs text-slate-400 font-semibold">
+                          👇 밑에 상자 번호를 누르면 각각의 상자 스펙을 확인할 수 있습니다.
+                        </p>
+                        <div className="ml-6 grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-[11px] sm:text-xs">
+                          {boxSpecs.map((spec) => {
+                            const isSelected = selectedNoticeBoxSlot === spec.slot;
+                            const rewardSol = GACHA_SLOT_REWARD_AMOUNTS[spec.slot];
+                            return (
+                              <button
+                                key={spec.slot}
+                                type="button"
+                                onClick={() =>
+                                  setSelectedNoticeBoxSlot((prev) => (prev === spec.slot ? null : spec.slot))
+                                }
+                                className={`px-2.5 py-1.5 rounded-lg border flex items-center justify-between gap-1 text-left transition-all cursor-pointer ${
+                                  isSelected
+                                    ? 'border-cyan-400/70 bg-cyan-500/10 ring-1 ring-cyan-400/30'
+                                    : 'bg-slate-900 border-slate-800 hover:border-slate-600'
+                                }`}
+                              >
+                                <span className="text-slate-100 font-bold truncate">{spec.shortName}</span>
+                                <span className="font-mono text-[11px] text-slate-400 shrink-0">
+                                  {spec.shortDiff} · <strong className="text-amber-300/90">{rewardSol} SOL</strong>
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {activeSpec && activeDims && activeReward !== null && (
+                          <div className="ml-6 p-3 rounded-xl bg-slate-900/95 border border-slate-700 space-y-2">
+                            <div className="flex items-center justify-between gap-2 border-b border-slate-800 pb-1.5">
+                              <span className="text-xs font-black text-white">
+                                📦 {activeSpec.fullName} 스펙
+                              </span>
+                              <span className="text-[11px] font-mono font-black text-amber-300">{activeReward} SOL</span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-1.5 text-[11px]">
+                              <div className="px-2 py-1.5 rounded-lg bg-slate-950/90 border border-slate-800">
+                                <span className="text-slate-400 block text-[10px]">목표 난이도</span>
+                                <span className="font-bold font-mono text-slate-100">{activeSpec.difficulty}</span>
+                              </div>
+                              <div className="px-2 py-1.5 rounded-lg bg-slate-950/90 border border-slate-800">
+                                <span className="text-slate-400 block text-[10px]">무게 (Mass)</span>
+                                <span className="font-bold font-mono text-slate-100">{activeDims.mass}</span>
+                              </div>
+                              <div className="px-2 py-1.5 rounded-lg bg-slate-950/90 border border-slate-800 col-span-2">
+                                <span className="text-slate-400 block text-[10px]">규격 — 가로(W) × 높이(H) × 세로 길이(D)</span>
+                                <span className="font-bold font-mono text-slate-100">
+                                  {activeDims.w} × {activeDims.h} × {activeDims.d}
+                                </span>
+                                <span className="text-[10px] text-slate-400 ml-1.5">(중앙 Bar 틈새 0.73)</span>
+                              </div>
+                            </div>
+                            <p className="text-[11px] text-slate-300 leading-snug">💡 {activeSpec.note}</p>
+                          </div>
+                        )}
+                      </div>
+
+                      <p className="flex items-start gap-2">
+                        <RefreshCw className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
+                        <span>
+                          각 뽑기판 상품은 초기 세팅·재정렬·리필 시 <strong className="text-white">중앙 정위치</strong>에 배치되며, 한쪽 집게가 상자에 걸려도 끝까지 하강해 반대쪽 집게로 파고들어 밀어내거나 비스듬히 들어올리는 등 <strong className="text-white">실제 오락실에 가까운 크레인 물리</strong>로 대폭 개선했습니다.
+                        </span>
+                      </p>
+                      <p className="flex items-start gap-2">
+                        <Sparkles className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
+                        <span>
+                          재정렬 원위치 상태에서 상품 정중앙 근처를 들어올리면 <strong className="text-emerald-300">Balance Catch!</strong>, 이후 중앙 빨간 Bar 근처에서 집게를 들어올리면 <strong className="text-amber-300">극한 드르륵!</strong> 특수 팝업 및 효과음이 재생됩니다.
+                        </span>
+                      </p>
+                      <p className="flex items-start gap-2">
+                        <Camera className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
+                        <span>
+                          항공뷰·측면뷰(우측뷰)에서는 크레인 조작이 불가능하며, 뽑기를 시작하면 <strong className="text-white">자동으로 정면뷰로 전환</strong>되어 진행됩니다. (정면에서 <strong className="text-white">까치발 업/다운 최대 45°</strong>까지는 조작 가능)
+                        </span>
+                      </p>
+                      <p className="flex items-start gap-2">
+                        <Coins className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
+                        <span>
+                          뽑기 리워드는 식사배틀 리워드와 별도로 운영되며, 보유 중인 뽑기 리워드 잔고 내에서 <strong className="text-white">원하는 SOL 수량을 직접 입력</strong>해 신청(업비트 입금 시 <strong className="text-amber-300">0.02 SOL 이상</strong> 권장)하거나 <strong className="text-white">0.001 SOL당 뽑기권 1회</strong>로 즉시 교환할 수 있습니다.
+                        </span>
+                      </p>
+                      <p className="flex items-start gap-2">
+                        <ShieldCheck className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
+                        <span>
+                          연속 뽑기 도중 상품을 조기 당첨하면 <strong className="text-emerald-300">남은 미사용 뽑기권은 자동 반환</strong>되며, 승점 교환은 신청 가능 리워드 WIN(1WIN 이상)만 가능합니다.
+                        </span>
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* 261124 공지 (정기 운영 안내 · 기본 접힘) */}
+                <div className="bg-slate-950/75 rounded-2xl border border-slate-800 overflow-hidden transition-all">
+                  <button
+                    type="button"
+                    onClick={() => setOpenNotice261124(!openNotice261124)}
+                    className="w-full px-4 py-3 flex items-center justify-between gap-2 text-left hover:bg-slate-900/60 transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-800/90 text-slate-300 border border-slate-700 shrink-0">
+                        📌 261124 공지
+                      </span>
+                      <span className="text-xs sm:text-sm font-bold text-slate-300 truncate">
+                        정기 재정렬·리필 및 시스템 오류 안내
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-[11px] text-slate-500 font-mono hidden sm:inline">2026-11-24</span>
+                      {openNotice261124 ? (
+                        <ChevronUp className="w-4 h-4 text-slate-300 shrink-0" />
+                      ) : (
+                        <ChevronDown className="w-4 h-4 text-slate-500 shrink-0" />
+                      )}
+                    </div>
+                  </button>
+
+                  {openNotice261124 && (
+                    <div className="px-4 pb-3.5 pt-2.5 space-y-2 border-t border-slate-800/80 text-xs text-slate-300 leading-relaxed font-medium">
+                      <p className="flex items-start gap-2">
+                        <Clock className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
+                        <span>
+                          뽑기 상품의 재정렬과 refill은 <strong className="text-amber-300">10:30, 14:00, 23:00</strong>에 자동으로 진행됩니다.
+                        </span>
+                      </p>
+                      <p className="flex items-start gap-2 text-slate-400">
+                        <Info className="w-4 h-4 text-slate-500 shrink-0 mt-0.5" />
+                        <span>
+                          불가피한 에러나 억울한 시스템 오류는 관리자에게 요청하면 재정렬 해드립니다.
+                        </span>
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 <div className="pt-1 flex justify-end">
                   <button
                     type="button"
                     onClick={() => setIsUfoNoticeOpen(false)}
-                    className="px-5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold cursor-pointer"
+                    className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs sm:text-sm font-bold cursor-pointer transition-colors"
                   >
                     확인
                   </button>
