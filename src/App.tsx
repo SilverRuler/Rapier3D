@@ -63,6 +63,16 @@ function getNextScheduledResetKst(nowMs: number): { ts: number; label: string } 
   return upcoming.find((c) => c.ts > nowMs) || upcoming[upcoming.length - 1];
 }
 
+function formatKstShortDateTime(ts?: number | null): string {
+  if (!ts) return '';
+  const kst = new Date(ts + 9 * 3600 * 1000);
+  const mm = String(kst.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(kst.getUTCDate()).padStart(2, '0');
+  const hh = String(kst.getUTCHours()).padStart(2, '0');
+  const mi = String(kst.getUTCMinutes()).padStart(2, '0');
+  return `${mm}/${dd} ${hh}:${mi}`;
+}
+
 function formatKstDateTime(ts?: number): string {
   if (!ts) return '';
   const kst = new Date(ts + 9 * 3600 * 1000);
@@ -145,6 +155,14 @@ export default function App() {
   const [isResetting, setIsResetting] = useState<boolean>(false);
   const [isGranting, setIsGranting] = useState<boolean>(false);
   const [statusMessage, setStatusMessage] = useState<string>('');
+  const [statusMessageAt, setStatusMessageAt] = useState<number | null>(null);
+  useEffect(() => {
+    if (statusMessage) {
+      setStatusMessageAt(Date.now() + serverClockOffset);
+    } else {
+      setStatusMessageAt(null);
+    }
+  }, [statusMessage, serverClockOffset]);
   const [activeWinModal, setActiveWinModal] = useState<GachaWinRecord | null>(null);
   const [activeWinRefundedTickets, setActiveWinRefundedTickets] = useState<number>(0);
 
@@ -1024,17 +1042,30 @@ export default function App() {
         </section>
 
         {/* 실시간 상태 알림 */}
-        {(statusMessage || machine?.lastActionSummary) && (
-          <div className="px-4 py-2.5 rounded-xl bg-slate-900/90 border border-slate-800 text-xs text-slate-300 flex items-center justify-between gap-2 flex-wrap">
-            <span>
-              📢 <strong className="text-cyan-300">최근 상황:</strong>{' '}
-              {statusMessage || machine?.lastActionSummary}
-            </span>
-            {machine?.resetCount ? (
-              <span className="text-[10px] text-slate-500 font-mono">재정렬 누적 {machine.resetCount}회</span>
-            ) : null}
-          </div>
-        )}
+        {(statusMessage || machine?.lastActionSummary) && (() => {
+          const displayTs = statusMessage
+            ? statusMessageAt
+            : machine?.updatedAt || machine?.lastPlayedAt || null;
+          const timeText = formatKstShortDateTime(displayTs);
+          return (
+            <div className="px-4 py-2.5 rounded-xl bg-slate-900/90 border border-slate-800 text-xs text-slate-300 flex items-center justify-between gap-2 flex-wrap">
+              <span className="min-w-0">
+                📢 <strong className="text-cyan-300">최근 상황:</strong>{' '}
+                {statusMessage || machine?.lastActionSummary}
+              </span>
+              <div className="flex items-center gap-2 shrink-0 ml-auto">
+                {machine?.resetCount ? (
+                  <span className="text-[10px] text-slate-500 font-mono">재정렬 누적 {machine.resetCount}회</span>
+                ) : null}
+                {timeText ? (
+                  <span className="text-[10px] text-slate-400 font-mono whitespace-nowrap">
+                    {timeText}
+                  </span>
+                ) : null}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* 2. Rapier3D 3D UFO 크레인 머신 */}
         <RapierUfoMachine3D
