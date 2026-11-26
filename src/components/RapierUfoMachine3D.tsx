@@ -305,6 +305,7 @@ const ARM_SEGMENTS = [
 ];
 
 const CLAW_OPEN_ANGLE = 0.72;
+const CLAW_RELEASE_ANGLE = 0.94;
 const CLAW_CLOSE_TARGET = -0.05;
 
 const G_ENV = 1 << 0;
@@ -1362,6 +1363,8 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           nearNearTriggeredThisTurn: false,
           lastHeadYForStall: homeY,
           descendStallTimer: 0,
+          liftTopHoldTimer: 0,
+          releaseClearTimer: 0,
           stepAccum: 0,
         };
 
@@ -1385,6 +1388,8 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           sim.effectTriggeredThisTurn = false;
           sim.nearNearTriggeredThisTurn = false;
           sim.descendStallTimer = 0;
+          sim.liftTopHoldTimer = 0;
+          sim.releaseClearTimer = 0;
 
           const idQ = { x: 0, y: 0, z: 0, w: 1 };
           const zero = { x: 0, y: 0, z: 0 };
@@ -1663,6 +1668,8 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
 
             if (sim.phaseTimer >= 0.62) {
               sim.phaseTimer = 0;
+              sim.liftTopHoldTimer = 0;
+              sim.releaseClearTimer = 0;
               sim.effectTriggeredThisTurn = false;
               sim.liftStartY.clear();
               for (const ent of prizeEntities.values()) {
@@ -1717,24 +1724,55 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
             }
 
             const reachedTop = prevTargetY >= GACHA_PHYSICS.CLAW_LIFT_Y - 0.005;
-            if ((reachedTop && sim.phaseTimer >= 0.35) || sim.phaseTimer >= 3.6) {
+            if (reachedTop) sim.liftTopHoldTimer += dt;
+            else sim.liftTopHoldTimer = 0;
+
+            // 최고점 도달 후 상승 관성이 잠잠해질 때까지(0.22s) 잠깐 정지한 뒤 집게 벌림 시작
+            if ((reachedTop && sim.liftTopHoldTimer >= 0.22) || sim.phaseTimer >= 3.8) {
               sim.phaseTimer = 0;
-              setArmTorques(Math.max(4, tuningRef.current.liftTorque * 0.75));
+              sim.releaseClearTimer = 0;
+              setArmTorques(Math.max(12, tuningRef.current.liftTorque * 2.2));
               setCranePhase('releasing');
               playTone(392, 0.1);
             }
           } else if (curPhase === 'releasing') {
-            // 크레인 제자리 유지 상태에서 집게를 천천히 벌려 상품이 튕기지 않고 수직 드랍되도록 함
+            // 크레인 X/Z 제자리 완전 고정 상태에서 집게를 끝까지 넓게 벌려 상품이 완전히 낙하·이탈한 뒤에만 원위치 복귀
             sim.phaseTimer += dt;
-            const openProg = Math.min(1, sim.phaseTimer / 0.78);
+            const openProg = Math.min(1, sim.phaseTimer / 0.62);
             const eased = openProg * openProg * (3 - 2 * openProg);
-            const openAngle = CLAW_CLOSE_TARGET * (1 - eased) + CLAW_OPEN_ANGLE * eased;
+            const openAngle = CLAW_CLOSE_TARGET * (1 - eased) + CLAW_RELEASE_ANGLE * eased;
             setArmTargets(openAngle);
 
-            if (sim.phaseTimer >= 1.25) {
+            // 집게가 충분히 벌어진 뒤에는 제자리에서 헤드만 수직으로 살짝 더 올려 여유 공간 확보
+            if (sim.phaseTimer >= 0.68) {
+              sim.targetHeadY = Math.min(homeY, sim.targetHeadY + 0.65 * dt);
+            }
+
+            const hpNow = headBody.translation();
+            let allPrizesClearedClaw = true;
+            for (const ent of prizeEntities.values()) {
+              if (sim.wonSet.has(ent.data.id)) continue;
+              const pp = ent.body.translation();
+              const pv = ent.body.linvel();
+              const horizDist = Math.hypot(pp.x - hpNow.x, pp.z - hpNow.z);
+              const stillNearClaw = pp.y > hpNow.y - 1.25;
+              const stillFallingMidAir = pp.y > 1.32 && Math.abs(pv.y) > 0.2;
+              if (horizDist < 1.25 && (stillNearClaw || stillFallingMidAir)) {
+                allPrizesClearedClaw = false;
+                break;
+              }
+            }
+
+            if (sim.phaseTimer >= 0.72 && allPrizesClearedClaw) {
+              sim.releaseClearTimer += dt;
+            } else {
+              sim.releaseClearTimer = 0;
+            }
+
+            if ((sim.phaseTimer >= 1.25 && sim.releaseClearTimer >= 0.35) || sim.phaseTimer >= 3.0) {
               sim.phaseTimer = 0;
               sim.settleQuietTime = 0;
-              setArmTorques(tuningRef.current.closeTorque);
+              setArmTorques(Math.max(10, tuningRef.current.closeTorque));
               setArmTargets(CLAW_OPEN_ANGLE);
               setCranePhase('settling');
             }
@@ -1742,7 +1780,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
             sim.phaseTimer += dt;
             sim.gantryX += (homeX - sim.gantryX) * Math.min(1, 2.2 * dt);
             sim.gantryZ += (homeZ - sim.gantryZ) * Math.min(1, 2.2 * dt);
-            sim.targetHeadY += (homeY - sim.targetHeadY) * Math.min(1, 2.2 * dt);
+            sim.targetHeadY += (homeY - sim.targetHeadY) * Math.min(1, 4.0 * dt);
 
             let allQuiet = true;
             for (const ent of prizeEntities.values()) {
