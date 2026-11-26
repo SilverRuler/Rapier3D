@@ -257,11 +257,11 @@ function createPlushMaterial(imgSrc: string): THREE.MeshStandardMaterial {
   });
 }
 
-// 완전한 <> 다이아몬드 갈고리 형상 (닫힘 시 하단 끝단이 중앙 x≈0에서 맞닿아 틈 없음)
+// 완전한 <> 다이아몬드 갈고리 형상 (전체 25% 확대 · 닫힘 시 하단 끝단이 중앙 x≈0에서 맞닿아 틈 없음)
 const ARM_SEGMENTS = [
-  { pos: [0.09, -0.17, 0] as const, rotZ: 0.49, half: [0.028, 0.195, 0.045] as const, mass: 0.11, isTip: false },
-  { pos: [0.08, -0.50, 0] as const, rotZ: -0.56, half: [0.026, 0.19, 0.052] as const, mass: 0.11, isTip: false },
-  { pos: [-0.10, -0.67, 0] as const, rotZ: 0.14, half: [0.085, 0.024, 0.072] as const, mass: 0.08, isTip: true },
+  { pos: [0.1125, -0.2125, 0] as const, rotZ: 0.49, half: [0.035, 0.244, 0.056] as const, mass: 0.13, isTip: false },
+  { pos: [0.10, -0.625, 0] as const, rotZ: -0.56, half: [0.0325, 0.238, 0.065] as const, mass: 0.13, isTip: false },
+  { pos: [-0.125, -0.8375, 0] as const, rotZ: 0.14, half: [0.106, 0.030, 0.090] as const, mass: 0.10, isTip: true },
 ];
 
 const CLAW_OPEN_ANGLE = 0.72;
@@ -558,8 +558,8 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           if (view === 'top') {
             return {
               fov,
-              pos: new THREE.Vector3(0, 6.2 * Math.max(1, scale * 0.88), 0.56),
-              look: new THREE.Vector3(0, 0.78, 0),
+              pos: new THREE.Vector3(0, 7.45 * Math.max(1, scale * 0.88), 0.62),
+              look: new THREE.Vector3(0, 0.78, 0.08),
             };
           }
           if (view === 'right') {
@@ -787,7 +787,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
         scene.add(ufoHeadGroup);
 
         const ufoTop = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.19, 0.30, 0.16, 24),
+          new THREE.CylinderGeometry(0.24, 0.375, 0.20, 24),
           new THREE.MeshStandardMaterial({
             color: '#10b981',
             emissive: '#059669',
@@ -796,12 +796,12 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
             roughness: 0.22,
           })
         );
-        ufoTop.position.set(0, 0.06, 0);
+        ufoTop.position.set(0, 0.08, 0);
         ufoTop.castShadow = true;
         ufoHeadGroup.add(ufoTop);
 
         const ufoRing = new THREE.Mesh(
-          new THREE.TorusGeometry(0.28, 0.03, 12, 24),
+          new THREE.TorusGeometry(0.35, 0.038, 12, 24),
           new THREE.MeshStandardMaterial({
             color: '#fbbf24',
             emissive: '#f59e0b',
@@ -824,7 +824,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
 
         const buildArmVisual = (side: -1 | 1) => {
           const group = new THREE.Group();
-          const pin = new THREE.Mesh(new THREE.CylinderGeometry(0.036, 0.036, 0.12, 12), hingePinMat);
+          const pin = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.15, 12), hingePinMat);
           pin.rotation.x = Math.PI / 2;
           group.add(pin);
 
@@ -981,7 +981,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
             .setCanSleep(false)
         );
         world.createCollider(
-          Rapier.ColliderDesc.cylinder(0.08, 0.23)
+          Rapier.ColliderDesc.cylinder(0.10, 0.29)
             .setMass(1.25)
             .setFriction(0.55)
             .setRestitution(0)
@@ -1017,7 +1017,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
         const createClawArm = (side: -1 | 1) => {
           const armBody = world.createRigidBody(
             Rapier.RigidBodyDesc.dynamic()
-              .setTranslation(homeX + side * 0.22, homeY - 0.02, homeZ)
+              .setTranslation(homeX + side * 0.275, homeY - 0.02, homeZ)
               .setLinearDamping(0.25)
               .setAngularDamping(0.45)
               .setCcdEnabled(true)
@@ -1038,7 +1038,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
             armColliders.push(col);
           }
 
-          const jData = Rapier.JointData.revolute({ x: side * 0.22, y: -0.02, z: 0 }, { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 1 });
+          const jData = Rapier.JointData.revolute({ x: side * 0.275, y: -0.02, z: 0 }, { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 1 });
           jData.limitsEnabled = true;
           jData.limits = side > 0 ? [-0.10, 1.18] : [-1.18, 0.10];
           const joint = world.createImpulseJoint(jData, headBody, armBody, true) as RAPIER.RevoluteImpulseJoint;
@@ -1251,12 +1251,12 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           headBody.setLinvel(zero, true);
           headBody.setAngvel(zero, true);
 
-          leftArm.body.setTranslation({ x: homeX - 0.22, y: homeY - 0.02, z: homeZ }, true);
+          leftArm.body.setTranslation({ x: homeX - 0.275, y: homeY - 0.02, z: homeZ }, true);
           leftArm.body.setRotation(idQ, true);
           leftArm.body.setLinvel(zero, true);
           leftArm.body.setAngvel(zero, true);
 
-          rightArm.body.setTranslation({ x: homeX + 0.22, y: homeY - 0.02, z: homeZ }, true);
+          rightArm.body.setTranslation({ x: homeX + 0.275, y: homeY - 0.02, z: homeZ }, true);
           rightArm.body.setRotation(idQ, true);
           rightArm.body.setLinvel(zero, true);
           rightArm.body.setAngvel(zero, true);
@@ -1589,7 +1589,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           trolleyMesh.position.set(sim.gantryX, 3.82, sim.gantryZ);
 
           tmpThreePosA.set(sim.gantryX, 3.79, sim.gantryZ);
-          tmpThreePosB.set(hp.x, hp.y + 0.14, hp.z);
+          tmpThreePosB.set(hp.x, hp.y + 0.18, hp.z);
           tmpThreeDir.subVectors(tmpThreePosB, tmpThreePosA);
           const cableLen = Math.max(0.08, tmpThreeDir.length());
           cableMesh.scale.set(1, cableLen, 1);
