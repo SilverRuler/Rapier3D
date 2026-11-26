@@ -45,13 +45,13 @@ export interface PhysicsTuning {
 }
 
 export const DEFAULT_PHYSICS_TUNING: PhysicsTuning = {
-  closeTorque: 10.0,
-  liftTorque: 9.0,
+  closeTorque: 2.0,
+  liftTorque: 2.0,
   descendFlexTorque: 4.2,
-  downPressForce: 34,
-  barRingFriction: 0.76,
+  downPressForce: 15,
+  barRingFriction: 1.19,
   clawTipFriction: 0.96,
-  massScale: 1.0,
+  massScale: 1.5,
   useComOffset: true,
   timeScale: 1.0,
   showColliders: false,
@@ -59,11 +59,6 @@ export const DEFAULT_PHYSICS_TUNING: PhysicsTuning = {
 
 export const SANDBOX_DEFAULT_PHYSICS_TUNING: PhysicsTuning = {
   ...DEFAULT_PHYSICS_TUNING,
-  closeTorque: 2.0,
-  liftTorque: 2.0,
-  downPressForce: 15,
-  barRingFriction: 1.19,
-  massScale: 1.5,
 };
 
 export const STAGE_PHYSICS = {
