@@ -57,6 +57,15 @@ export const DEFAULT_PHYSICS_TUNING: PhysicsTuning = {
   showColliders: false,
 };
 
+export const SANDBOX_DEFAULT_PHYSICS_TUNING: PhysicsTuning = {
+  ...DEFAULT_PHYSICS_TUNING,
+  closeTorque: 2.0,
+  liftTorque: 2.0,
+  downPressForce: 15,
+  barRingFriction: 1.19,
+  massScale: 1.5,
+};
+
 export const STAGE_PHYSICS = {
   BAR_Y: 0.72,
   BAR_RADIUS: 0.09,

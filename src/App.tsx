@@ -84,6 +84,15 @@ function formatKstDateTime(ts?: number): string {
   return `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
 }
 
+interface RecentLogEntry {
+  id: string;
+  type: string;
+  member: string;
+  message: string;
+  createdAt: number;
+  machineIndex?: number;
+}
+
 export default function App() {
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
   const [isAdminLoginOpen, setIsAdminLoginOpen] = useState<boolean>(false);
@@ -108,6 +117,12 @@ export default function App() {
   const [recentWins, setRecentWins] = useState<GachaWinRecord[]>([]);
   const [showAllRecentWins, setShowAllRecentWins] = useState<boolean>(false);
   const [recentWinsPage, setRecentWinsPage] = useState<number>(1);
+  const [recentLogs, setRecentLogs] = useState<RecentLogEntry[]>([]);
+  const [totalLogCount, setTotalLogCount] = useState<number>(0);
+  const [isRecentLogsExpanded, setIsRecentLogsExpanded] = useState<boolean>(false);
+  const [recentLogsPage, setRecentLogsPage] = useState<number>(1);
+  const [pagedRecentLogs, setPagedRecentLogs] = useState<RecentLogEntry[]>([]);
+  const [isLoadingRecentLogs, setIsLoadingRecentLogs] = useState<boolean>(false);
   const [gachaWinStats, setGachaWinStats] = useState<MemberWinStats[]>([]);
   const [usedWinsByMember, setUsedWinsByMember] = useState<Record<string, number>>({});
   const [availableGachaSolByMember, setAvailableGachaSolByMember] = useState<Record<string, number>>({});
@@ -241,6 +256,12 @@ export default function App() {
         }
         setTicketsByMember(data.ticketsByMember || {});
         setRecentWins(data.recentWins || []);
+        if (Array.isArray(data.recentLogs)) {
+          setRecentLogs(data.recentLogs);
+        }
+        if (typeof data.totalLogCount === 'number') {
+          setTotalLogCount(data.totalLogCount);
+        }
         if (Array.isArray(data.gachaWinStats)) {
           setGachaWinStats(data.gachaWinStats);
         }
@@ -258,6 +279,35 @@ export default function App() {
       console.warn('Failed to fetch gacha state:', e);
     }
   }, []);
+
+  const fetchRecentLogsPage = useCallback(async (page: number) => {
+    setIsLoadingRecentLogs(true);
+    try {
+      const resp = await fetch(`/api/gacha/logs?page=${page}&limit=10&_t=${Date.now()}`, {
+        cache: 'no-store',
+      });
+      const data = await resp.json();
+      if (data.success && Array.isArray(data.logs)) {
+        setPagedRecentLogs(data.logs);
+        if (typeof data.totalCount === 'number') {
+          setTotalLogCount(data.totalCount);
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to fetch gacha logs page:', e);
+    } finally {
+      setIsLoadingRecentLogs(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isRecentLogsExpanded) return;
+    if (recentLogsPage === 1) {
+      setPagedRecentLogs(recentLogs);
+    } else {
+      fetchRecentLogsPage(recentLogsPage);
+    }
+  }, [isRecentLogsExpanded, recentLogsPage, recentLogs, fetchRecentLogsPage]);
 
   const handleSelectMember = (name: string) => {
     setSelectedMember(name);
@@ -1041,28 +1091,188 @@ export default function App() {
           </div>
         </section>
 
-        {/* 실시간 상태 알림 */}
-        {(statusMessage || machine?.lastActionSummary) && (() => {
-          const displayTs = statusMessage
+        {/* 실시간 상태 알림 (평소 접기 1건 · 펼치기 시 10건/페이지 페이지네이션) */}
+        {(() => {
+          const LOGS_PAGE_SIZE = 10;
+          const latestServerLog = recentLogs[0] || null;
+          const useLocalStatus =
+            Boolean(statusMessage) &&
+            (!latestServerLog || (statusMessageAt || 0) >= (latestServerLog.createdAt || 0));
+          const collapsedMessage = useLocalStatus
+            ? statusMessage
+            : latestServerLog?.message || machine?.lastActionSummary || '';
+          const collapsedTs = useLocalStatus
             ? statusMessageAt
-            : machine?.updatedAt || machine?.lastPlayedAt || null;
-          const timeText = formatKstShortDateTime(displayTs);
+            : latestServerLog?.createdAt || machine?.updatedAt || machine?.lastPlayedAt || null;
+
+          if (!collapsedMessage && recentLogs.length === 0) return null;
+
+          const effectiveTotalLogs = Math.max(totalLogCount, recentLogs.length);
+          const totalLogPages = Math.max(1, Math.ceil(effectiveTotalLogs / LOGS_PAGE_SIZE));
+          const safeLogPage = Math.min(Math.max(1, recentLogsPage), totalLogPages);
+          const displayedLogs =
+            safeLogPage === 1 ? recentLogs.slice(0, LOGS_PAGE_SIZE) : pagedRecentLogs;
+          const logStartIdx = (safeLogPage - 1) * LOGS_PAGE_SIZE;
+
+          const getLogPageNumbers = (): Array<number | 'ellipsis'> => {
+            if (totalLogPages <= 5) {
+              return Array.from({ length: totalLogPages }, (_, i) => i + 1);
+            }
+            const pages: Array<number | 'ellipsis'> = [1];
+            const windowStart = Math.max(2, safeLogPage - 1);
+            const windowEnd = Math.min(totalLogPages - 1, safeLogPage + 1);
+            if (windowStart > 2) pages.push('ellipsis');
+            for (let p = windowStart; p <= windowEnd; p++) pages.push(p);
+            if (windowEnd < totalLogPages - 1) pages.push('ellipsis');
+            pages.push(totalLogPages);
+            return pages;
+          };
+
+          const collapsedTimeText = formatKstShortDateTime(collapsedTs);
+
           return (
-            <div className="px-4 py-2.5 rounded-xl bg-slate-900/90 border border-slate-800 text-xs text-slate-300 flex items-center justify-between gap-2 flex-wrap">
-              <span className="min-w-0">
-                📢 <strong className="text-cyan-300">최근 상황:</strong>{' '}
-                {statusMessage || machine?.lastActionSummary}
-              </span>
-              <div className="flex items-center gap-2 shrink-0 ml-auto">
-                {machine?.resetCount ? (
-                  <span className="text-[10px] text-slate-500 font-mono">재정렬 누적 {machine.resetCount}회</span>
-                ) : null}
-                {timeText ? (
-                  <span className="text-[10px] text-slate-400 font-mono whitespace-nowrap">
-                    {timeText}
+            <div className="rounded-xl bg-slate-900/90 border border-slate-800 text-xs text-slate-300 overflow-hidden">
+              {!isRecentLogsExpanded ? (
+                <div className="px-4 py-2.5 flex items-center justify-between gap-2 flex-wrap">
+                  <span className="min-w-0 flex-1">
+                    📢 <strong className="text-cyan-300">최근 상황:</strong>{' '}
+                    {collapsedMessage}
                   </span>
-                ) : null}
-              </div>
+                  <div className="flex items-center gap-2 shrink-0 ml-auto">
+                    {machine?.resetCount ? (
+                      <span className="text-[10px] text-slate-500 font-mono">
+                        재정렬 누적 {machine.resetCount}회
+                      </span>
+                    ) : null}
+                    {collapsedTimeText ? (
+                      <span className="text-[10px] text-slate-400 font-mono whitespace-nowrap">
+                        {collapsedTimeText}
+                      </span>
+                    ) : null}
+                    {effectiveTotalLogs > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsRecentLogsExpanded(true);
+                          setRecentLogsPage(1);
+                        }}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-cyan-300 hover:text-cyan-200 text-[10px] font-bold cursor-pointer transition-colors"
+                      >
+                        <span>펼치기 ({effectiveTotalLogs})</span>
+                        <ChevronDown className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3.5 space-y-2.5">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <span className="font-black text-cyan-300">📢 최근 상황 로그</span>
+                      <span className="px-2 py-0.5 rounded-full bg-cyan-500/15 border border-cyan-500/30 text-cyan-200 text-[10px] font-mono font-bold">
+                        총 {effectiveTotalLogs}건
+                      </span>
+                      {machine?.resetCount ? (
+                        <span className="text-[10px] text-slate-500 font-mono">
+                          재정렬 누적 {machine.resetCount}회
+                        </span>
+                      ) : null}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsRecentLogsExpanded(false);
+                        setRecentLogsPage(1);
+                      }}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white text-[11px] font-bold cursor-pointer transition-colors"
+                    >
+                      <ChevronUp className="w-3.5 h-3.5" />
+                      <span>접기</span>
+                    </button>
+                  </div>
+
+                  {isLoadingRecentLogs ? (
+                    <div className="py-6 flex items-center justify-center gap-2 text-slate-400">
+                      <Loader2 className="w-4 h-4 animate-spin text-cyan-400" />
+                      <span>로그를 불러오는 중...</span>
+                    </div>
+                  ) : displayedLogs.length === 0 ? (
+                    <p className="py-3 text-center text-slate-500">기록된 로그가 없습니다.</p>
+                  ) : (
+                    <div className="divide-y divide-slate-800/80 rounded-lg bg-slate-950/70 border border-slate-800/80">
+                      {displayedLogs.map((log, idx) => {
+                        const rowTime = formatKstShortDateTime(log.createdAt);
+                        return (
+                          <div
+                            key={log.id || `${safeLogPage}-${idx}`}
+                            className="px-3 py-2 flex items-center justify-between gap-3"
+                          >
+                            <span className="min-w-0 text-slate-200 leading-snug break-words">
+                              {log.message}
+                            </span>
+                            {rowTime ? (
+                              <span className="text-[10px] text-slate-400 font-mono whitespace-nowrap shrink-0">
+                                {rowTime}
+                              </span>
+                            ) : null}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  <div className="pt-1 flex flex-col sm:flex-row items-center justify-between gap-2">
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      {effectiveTotalLogs > 0
+                        ? `${logStartIdx + 1}–${Math.min(logStartIdx + LOGS_PAGE_SIZE, effectiveTotalLogs)} / 총 ${effectiveTotalLogs}건 (${safeLogPage}/${totalLogPages} 페이지)`
+                        : '0건'}
+                    </span>
+                    {totalLogPages > 1 && (
+                      <div className="flex items-center gap-1 flex-wrap justify-center">
+                        <button
+                          type="button"
+                          disabled={safeLogPage <= 1 || isLoadingRecentLogs}
+                          onClick={() => setRecentLogsPage(Math.max(1, safeLogPage - 1))}
+                          className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white disabled:opacity-35 cursor-pointer"
+                        >
+                          <ChevronLeft className="w-3.5 h-3.5" />
+                        </button>
+
+                        {getLogPageNumbers().map((item, idx) =>
+                          item === 'ellipsis' ? (
+                            <span key={`log-ellipsis-${idx}`} className="px-1 text-xs text-slate-500">
+                              …
+                            </span>
+                          ) : (
+                            <button
+                              key={`log-page-${item}`}
+                              type="button"
+                              disabled={isLoadingRecentLogs}
+                              onClick={() => setRecentLogsPage(item)}
+                              className={`min-w-[28px] h-7 px-1.5 rounded-lg border text-[11px] font-mono font-black transition-all cursor-pointer ${
+                                item === safeLogPage
+                                  ? 'bg-cyan-500 text-slate-950 border-cyan-300 shadow-sm'
+                                  : 'bg-slate-950/80 hover:bg-slate-800 border-slate-800 text-slate-300 hover:text-white'
+                              }`}
+                            >
+                              {item}
+                            </button>
+                          )
+                        )}
+
+                        <button
+                          type="button"
+                          disabled={safeLogPage >= totalLogPages || isLoadingRecentLogs}
+                          onClick={() => setRecentLogsPage(Math.min(totalLogPages, safeLogPage + 1))}
+                          className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white disabled:opacity-35 cursor-pointer"
+                        >
+                          <ChevronRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           );
         })()}

@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import { Sliders, RotateCcw, Trophy, Cpu, Layers, Sparkles, Eye } from 'lucide-react';
 import {
-  DEFAULT_PHYSICS_TUNING,
+  SANDBOX_DEFAULT_PHYSICS_TUNING,
   PhysicsTuning,
   PRIZE_SPECS,
 } from '@/constants/prizes';
@@ -30,7 +30,7 @@ export default function SandboxApp() {
   );
   const [turnSeq, setTurnSeq] = useState(0);
   const [activeTurnKey, setActiveTurnKey] = useState<string | null>(null);
-  const [tuning, setTuning] = useState<PhysicsTuning>(DEFAULT_PHYSICS_TUNING);
+  const [tuning, setTuning] = useState<PhysicsTuning>(SANDBOX_DEFAULT_PHYSICS_TUNING);
   const [showTuning, setShowTuning] = useState(true);
   const [totalPlays, setTotalPlays] = useState(0);
   const [totalWins, setTotalWins] = useState(0);
@@ -202,7 +202,7 @@ export default function SandboxApp() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setTuning(DEFAULT_PHYSICS_TUNING)}
+                    onClick={() => setTuning(SANDBOX_DEFAULT_PHYSICS_TUNING)}
                     className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-[11px] font-bold cursor-pointer"
                   >
                     <RotateCcw className="w-3 h-3" />
@@ -217,7 +217,7 @@ export default function SandboxApp() {
                     <span className="text-slate-300">집게 닫힘 토크 (잡는 힘)</span>
                     <span className="font-mono text-emerald-300">{tuning.closeTorque.toFixed(1)} N·m</span>
                   </div>
-                  <input type="range" min={2} max={24} step={0.5} value={tuning.closeTorque} onChange={(e) => setTuning((t) => ({ ...t, closeTorque: Number(e.target.value) }))} className="w-full accent-emerald-400" />
+                  <input type="range" min={1} max={24} step={0.5} value={tuning.closeTorque} onChange={(e) => setTuning((t) => ({ ...t, closeTorque: Number(e.target.value) }))} className="w-full accent-emerald-400" />
                 </label>
 
                 <label className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1">
@@ -225,7 +225,7 @@ export default function SandboxApp() {
                     <span className="text-slate-300">집게 리프트 유지 토크</span>
                     <span className="font-mono text-amber-300">{tuning.liftTorque.toFixed(1)} N·m</span>
                   </div>
-                  <input type="range" min={2} max={22} step={0.5} value={tuning.liftTorque} onChange={(e) => setTuning((t) => ({ ...t, liftTorque: Number(e.target.value) }))} className="w-full accent-amber-400" />
+                  <input type="range" min={1} max={22} step={0.5} value={tuning.liftTorque} onChange={(e) => setTuning((t) => ({ ...t, liftTorque: Number(e.target.value) }))} className="w-full accent-amber-400" />
                 </label>
 
                 <label className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1">
@@ -233,7 +233,7 @@ export default function SandboxApp() {
                     <span className="text-slate-300">하강 누르기 최대 힘</span>
                     <span className="font-mono text-cyan-300">{tuning.downPressForce.toFixed(0)} N</span>
                   </div>
-                  <input type="range" min={15} max={70} step={1} value={tuning.downPressForce} onChange={(e) => setTuning((t) => ({ ...t, downPressForce: Number(e.target.value) }))} className="w-full accent-cyan-400" />
+                  <input type="range" min={10} max={70} step={1} value={tuning.downPressForce} onChange={(e) => setTuning((t) => ({ ...t, downPressForce: Number(e.target.value) }))} className="w-full accent-cyan-400" />
                 </label>
 
                 <label className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1">
@@ -241,7 +241,7 @@ export default function SandboxApp() {
                     <span className="text-slate-300">중앙 빨간 실리콘 링 마찰력</span>
                     <span className="font-mono text-rose-300">{tuning.barRingFriction.toFixed(2)} μ</span>
                   </div>
-                  <input type="range" min={0.25} max={1.2} step={0.02} value={tuning.barRingFriction} onChange={(e) => setTuning((t) => ({ ...t, barRingFriction: Number(e.target.value) }))} className="w-full accent-rose-400" />
+                  <input type="range" min={0.25} max={1.5} step={0.01} value={tuning.barRingFriction} onChange={(e) => setTuning((t) => ({ ...t, barRingFriction: Number(e.target.value) }))} className="w-full accent-rose-400" />
                 </label>
 
                 <label className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1">
@@ -249,7 +249,7 @@ export default function SandboxApp() {
                     <span className="text-slate-300">상품 무게 배율</span>
                     <span className="font-mono text-purple-300">{tuning.massScale.toFixed(2)}×</span>
                   </div>
-                  <input type="range" min={0.6} max={1.5} step={0.05} value={tuning.massScale} onChange={(e) => setTuning((t) => ({ ...t, massScale: Number(e.target.value) }))} className="w-full accent-purple-400" />
+                  <input type="range" min={0.6} max={2.0} step={0.05} value={tuning.massScale} onChange={(e) => setTuning((t) => ({ ...t, massScale: Number(e.target.value) }))} className="w-full accent-purple-400" />
                 </label>
 
                 <div className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 flex items-center justify-between gap-2">
