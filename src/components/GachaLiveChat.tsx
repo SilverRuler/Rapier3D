@@ -53,7 +53,7 @@ export const GachaLiveChat: React.FC = () => {
   const fetchMessages = useCallback(async () => {
     if (typeof document !== 'undefined' && document.hidden) return;
     try {
-      const resp = await fetch(`/api/maintenance-chat?_t=${Date.now()}`, { cache: 'no-store' });
+      const resp = await fetch(`/api/maintenance-chat?src=gacha&_t=${Date.now()}`, { cache: 'no-store' });
       if (!resp.ok) return;
       const data = await resp.json();
       if (data?.success && Array.isArray(data.messages)) {

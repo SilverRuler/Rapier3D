@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   ArrowLeft,
   Sparkles,
@@ -23,6 +23,7 @@ import {
   ChevronRight,
   Lock,
   LogOut,
+  Radio,
 } from 'lucide-react';
 import { MEMBERS } from '@/constants/members';
 import {
@@ -44,6 +45,7 @@ import { RewardModal } from '@/components/RewardModal';
 import { AdminLoginModal } from '@/components/AdminLoginModal';
 import { GachaLiveChat } from '@/components/GachaLiveChat';
 import { GachaPrizeInfoModal } from '@/components/GachaPrizeInfoModal';
+import { PresenceModal } from '@/components/PresenceModal';
 
 const WINNER_SITE_URL = 'https://win.silverruler.xyz';
 const NICK_CONFIRMED_UA_KEY = 'aial_gacha_nick_confirmed_ua_v1';
@@ -159,7 +161,10 @@ export default function App() {
   } | null>(null);
   const [isStartModalOpen, setIsStartModalOpen] = useState<boolean>(false);
   const [isNickConfirmOpen, setIsNickConfirmOpen] = useState<boolean>(false);
+  const [stateLoaded, setStateLoaded] = useState<boolean>(false);
   const [isMachineSuspended, setIsMachineSuspended] = useState<boolean>(false);
+  const [isPresenceOpen, setIsPresenceOpen] = useState<boolean>(false);
+  const [activeUsersCount, setActiveUsersCount] = useState<number>(0);
   const [resetCountdownSec, setResetCountdownSec] = useState<number | null>(null);
   const [resetTargetLabel, setResetTargetLabel] = useState<string>('');
   const [isResetLockdown, setIsResetLockdown] = useState<boolean>(false);
@@ -241,13 +246,37 @@ export default function App() {
     setIsAdmin(false);
   };
 
+  const presenceMetaRef = useRef({
+    member: selectedMember,
+    machineIndex: selectedMachineIndex,
+    playing: false,
+  });
+  useEffect(() => {
+    presenceMetaRef.current = {
+      member: selectedMember,
+      machineIndex: selectedMachineIndex,
+      playing: Boolean(activeTurnId),
+    };
+  }, [selectedMember, selectedMachineIndex, activeTurnId]);
+
   const fetchState = useCallback(async () => {
     try {
-      const resp = await fetch(`/api/gacha/state?_t=${Date.now()}`, { cache: 'no-store' });
+      const meta = presenceMetaRef.current;
+      const qs = new URLSearchParams({
+        _t: String(Date.now()),
+        engine: 'Rapier3D',
+        machine: String(meta.machineIndex),
+        member: meta.member || '',
+        playing: meta.playing ? '1' : '0',
+      });
+      const resp = await fetch(`/api/gacha/state?${qs.toString()}`, { cache: 'no-store' });
       const data = await resp.json();
       if (data.success) {
         if (typeof data.serverNow === 'number') {
           setServerClockOffset(data.serverNow - Date.now());
+        }
+        if (typeof data.activeUsersCount === 'number') {
+          setActiveUsersCount(data.activeUsersCount);
         }
         if (data.machineOps && typeof data.machineOps.suspended === 'boolean') {
           setIsMachineSuspended(data.machineOps.suspended);
@@ -277,6 +306,7 @@ export default function App() {
         if (data.mealWinSummaryByMember) {
           setMealWinSummaryByMember(data.mealWinSummaryByMember);
         }
+        setStateLoaded(true);
       }
     } catch (e) {
       console.warn('Failed to fetch gacha state:', e);
@@ -419,22 +449,46 @@ export default function App() {
     });
   }, [machines, serverClockOffset, activeTurnId]);
 
-  // 8초마다 하트비트 전송
+  // 전 기기 운영 중단 전환 시 진행 중인 모든 로컬 턴 및 조작 모달 즉시 강제 종료
+  useEffect(() => {
+    if (!isMachineSuspended) return;
+    setActiveTurnId(null);
+    setActiveTurnKey(null);
+    setPendingNextTurnKey(null);
+    setSessionProgress(null);
+    setIsStartModalOpen(false);
+    setIsNickConfirmOpen(false);
+    setIsSolExchangeModalOpen(false);
+    setPendingMultiPlayCount(null);
+  }, [isMachineSuspended]);
+
+  // 8초마다 하트비트 전송 (운영 중단 503 응답 시 즉시 턴 종료)
   useEffect(() => {
     if (!activeTurnId) return;
-    const hb = setInterval(() => {
-      fetch('/api/gacha/heartbeat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          turnId: activeTurnId,
-          member: selectedMember,
-          machineIndex: selectedMachineIndex,
-        }),
-      }).catch(() => {});
+    const hb = setInterval(async () => {
+      try {
+        const resp = await fetch('/api/gacha/heartbeat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            turnId: activeTurnId,
+            member: selectedMember,
+            machineIndex: selectedMachineIndex,
+            engine: 'Rapier3D',
+          }),
+        });
+        if (resp.status === 503) {
+          setIsMachineSuspended(true);
+          setActiveTurnId(null);
+          setActiveTurnKey(null);
+          setPendingNextTurnKey(null);
+          setSessionProgress(null);
+          fetchState();
+        }
+      } catch {}
     }, 8000);
     return () => clearInterval(hb);
-  }, [activeTurnId, selectedMember, selectedMachineIndex]);
+  }, [activeTurnId, selectedMember, selectedMachineIndex, fetchState]);
 
   // 정기 자동 리셋(10:30, 14:00, 23:00 KST) 10초 전 카운트다운 브로드캐스트 & 5초 전 락다운
   useEffect(() => {
@@ -747,7 +801,7 @@ export default function App() {
   };
 
   const handleExchangeWinForTickets = async () => {
-    if (isExchangingWin || activeTurnId) return;
+    if (isExchangingWin || activeTurnId || isMachineSuspended) return;
     const summary = mealWinSummaryByMember[selectedMember];
     const actualWins = summary?.actualWins ?? 0;
     const exchangedWins = summary?.exchangedWins ?? 0;
@@ -795,7 +849,7 @@ export default function App() {
   }, [myAvailableGachaSol]);
 
   const handleOpenSolExchangeModal = () => {
-    if (isExchangingSol || activeTurnId) return;
+    if (isExchangingSol || activeTurnId || isMachineSuspended) return;
     if (maxSolExchangeTickets < 1) {
       setStatusMessage(
         `${selectedMember}님의 신청 가능 뽑기 리워드(${myAvailableGachaSol} SOL)가 부족합니다. (0.001 SOL당 뽑기권 1장)`
@@ -808,7 +862,7 @@ export default function App() {
   };
 
   const handleConfirmSolExchange = async (ticketCount: number) => {
-    if (isExchangingSol || activeTurnId) return;
+    if (isExchangingSol || activeTurnId || isMachineSuspended) return;
     if (!Number.isInteger(ticketCount) || ticketCount < 1) {
       setSolExchangeError('1 이상의 숫자를 입력해주세요.');
       return;
@@ -935,6 +989,16 @@ export default function App() {
               <>
                 <button
                   type="button"
+                  onClick={() => setIsPresenceOpen(true)}
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/50 text-emerald-200 text-xs font-black cursor-pointer transition-colors"
+                  title="실시간 IP별 동접 현황 보기"
+                >
+                  <Radio className="w-3.5 h-3.5 text-emerald-300 animate-pulse" />
+                  <span>동접 {activeUsersCount}</span>
+                </button>
+
+                <button
+                  type="button"
                   onClick={() => handleAdminGrantTicket(1)}
                   disabled={isGranting}
                   className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/40 text-cyan-300 text-xs font-bold cursor-pointer disabled:opacity-50"
@@ -981,6 +1045,49 @@ export default function App() {
 
       {/* 메인 게임 영역 */}
       <main className="flex-1 max-w-6xl w-full mx-auto px-3 sm:px-6 py-4 sm:py-6 space-y-5">
+        {!stateLoaded ? (
+          <section className="p-10 rounded-3xl bg-slate-900/90 border border-slate-800 text-center space-y-3">
+            <Loader2 className="w-8 h-8 animate-spin text-amber-400 mx-auto" />
+            <p className="text-sm font-bold text-slate-300">뽑기판 운영 상태를 확인하고 있습니다...</p>
+          </section>
+        ) : isMachineSuspended ? (
+          /* 전 기기 운영 중단 시 3D 머신·교환·시작 UI 자체를 DOM에서 완전히 언마운트하여 F12 우회 원천 차단 */
+          <section className="p-6 sm:p-10 rounded-3xl bg-gradient-to-b from-slate-900 via-slate-900/95 to-slate-950 border border-amber-500/60 shadow-2xl text-center space-y-5">
+            <div className="w-16 h-16 mx-auto rounded-2xl bg-amber-500/20 border border-amber-400/50 flex items-center justify-center text-3xl">
+              🛠️
+            </div>
+            <div className="space-y-2 max-w-md mx-auto">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-400/40 text-amber-300 text-xs font-black">
+                전 기기 운영 중단 · 점검중
+              </div>
+              <h2 className="text-xl sm:text-2xl font-black text-white">
+                현재 전체 뽑기판 점검중입니다
+              </h2>
+              <p className="text-xs sm:text-sm text-slate-300 leading-relaxed break-keep">
+                관리자에 의해 모든 뽑기 기기 운영이 일시 중단되었습니다.
+                <br />
+                점검 중에는 게임 실행·뽑기권 교환이 서버와 화면 모두에서 완전히 차단되며,
+                운영이 재개되면 별도 새로고침 없이 자동으로 복구됩니다.
+              </p>
+            </div>
+            <div className="pt-1 flex items-center justify-center gap-2.5 flex-wrap">
+              <a
+                href={WINNER_SITE_URL}
+                className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-bold transition-colors"
+              >
+                식사 배틀로 복귀
+              </a>
+              <button
+                type="button"
+                onClick={fetchState}
+                className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black cursor-pointer transition-colors"
+              >
+                상태 새로고침
+              </button>
+            </div>
+          </section>
+        ) : (
+          <>
         {/* 미수령 당첨 리워드 신청 가능 알림 */}
         {myAvailableGachaSol > 0 && (
           <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-500/20 via-orange-500/15 to-rose-500/20 border border-amber-400/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg">
@@ -1319,6 +1426,8 @@ export default function App() {
           isRefilling={isRefilling}
           isResetting={isResetting}
         />
+          </>
+        )}
 
         {/* 3. 최근 UFO 뽑기 당첨 현황 (기본 4건 -> 더 보기 시 10건/페이지) */}
         {(() => {
@@ -1549,45 +1658,8 @@ export default function App() {
         </div>
       )}
 
-      {/* 전 기기 운영 중단(점검중) 오버레이 */}
-      {isMachineSuspended && !isResetLockdown && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-sm">
-          <div className="bg-slate-900 border border-amber-500/60 w-full max-w-md rounded-3xl p-6 shadow-2xl text-center space-y-4">
-            <div className="w-16 h-16 mx-auto rounded-2xl bg-amber-500/20 border border-amber-400/50 flex items-center justify-center text-3xl">
-              🛠️
-            </div>
-            <div className="space-y-2">
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-400/40 text-amber-300 text-xs font-black">
-                전 기기 운영 중단 · 점검중
-              </div>
-              <h3 className="text-xl font-black text-white">현재 전체 뽑기판 점검중입니다</h3>
-              <p className="text-xs sm:text-sm text-slate-300 leading-relaxed break-keep">
-                관리자에 의해 모든 뽑기 기기 운영이 일시 중단되었습니다.
-                <br />
-                운영이 재개되면 별도 새로고침 없이 자동으로 해제됩니다.
-              </p>
-            </div>
-            <div className="pt-1 flex items-center justify-center gap-2">
-              <a
-                href={WINNER_SITE_URL}
-                className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-bold transition-colors"
-              >
-                식사 배틀로 복귀
-              </a>
-              <button
-                type="button"
-                onClick={fetchState}
-                className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black cursor-pointer transition-colors"
-              >
-                상태 새로고침
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* 기기 최초 1회 유저(닉) 확인 팝업 (기기별 1회만 확인, 닉네임 고정 없음) */}
-      {isNickConfirmOpen && (
+      {isNickConfirmOpen && !isMachineSuspended && (
         <div
           className="fixed inset-0 z-[65] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
           onClick={() => setIsNickConfirmOpen(false)}
@@ -1632,7 +1704,7 @@ export default function App() {
       )}
 
       {/* 뽑기 시작 횟수 선택 & 연속 5가챠(+1 무료) 모달 */}
-      {isStartModalOpen && (() => {
+      {isStartModalOpen && !isMachineSuspended && (() => {
         const maxTickets = selectedBalance.tickets;
         const parsedInput = parseInt(startPlayInput, 10);
         const validCount =
@@ -1787,7 +1859,7 @@ export default function App() {
       })()}
 
       {/* 뽑기 리워드(0.001 SOL = 1뽑기권) 교환 모달 */}
-      {isSolExchangeModalOpen && (() => {
+      {isSolExchangeModalOpen && !isMachineSuspended && (() => {
         const parsedCount = parseInt(solExchangeInput, 10);
         const validCount =
           !isNaN(parsedCount) && parsedCount >= 1 && parsedCount <= maxSolExchangeTickets
@@ -2316,6 +2388,11 @@ export default function App() {
         onClose={() => setIsPrizeInfoOpen(false)}
         currentMachineIndex={selectedMachineIndex}
         onSelectMachine={handleSelectMachine}
+      />
+
+      <PresenceModal
+        isOpen={isPresenceOpen}
+        onClose={() => setIsPresenceOpen(false)}
       />
 
       <AdminLoginModal
