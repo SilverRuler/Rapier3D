@@ -43,6 +43,24 @@ import { RewardModal } from '@/components/RewardModal';
 import { AdminLoginModal } from '@/components/AdminLoginModal';
 
 const WINNER_SITE_URL = 'https://win.silverruler.xyz';
+const NICK_CONFIRMED_UA_KEY = 'aial_gacha_nick_confirmed_ua_v1';
+
+function getNextScheduledResetKst(nowMs: number): { ts: number; label: string } {
+  const KST_OFFSET_MS = 9 * 3600 * 1000;
+  const kstDate = new Date(nowMs + KST_OFFSET_MS);
+  const y = kstDate.getUTCFullYear();
+  const m = kstDate.getUTCMonth();
+  const d = kstDate.getUTCDate();
+  const makeKstMs = (year: number, month: number, day: number, hour: number, minute: number) =>
+    Date.UTC(year, month, day, hour, minute, 0, 0) - KST_OFFSET_MS;
+  const upcoming = [
+    { label: '10:30', ts: makeKstMs(y, m, d, 10, 30) },
+    { label: '14:00', ts: makeKstMs(y, m, d, 14, 0) },
+    { label: '23:00', ts: makeKstMs(y, m, d, 23, 0) },
+    { label: '10:30', ts: makeKstMs(y, m, d + 1, 10, 30) },
+  ];
+  return upcoming.find((c) => c.ts > nowMs) || upcoming[upcoming.length - 1];
+}
 
 function formatKstDateTime(ts?: number): string {
   if (!ts) return '';
@@ -111,6 +129,11 @@ export default function App() {
     bonusPlays: number;
   } | null>(null);
   const [isStartModalOpen, setIsStartModalOpen] = useState<boolean>(false);
+  const [isNickConfirmOpen, setIsNickConfirmOpen] = useState<boolean>(false);
+  const [isMachineSuspended, setIsMachineSuspended] = useState<boolean>(false);
+  const [resetCountdownSec, setResetCountdownSec] = useState<number | null>(null);
+  const [resetTargetLabel, setResetTargetLabel] = useState<string>('');
+  const [isResetLockdown, setIsResetLockdown] = useState<boolean>(false);
   const [pendingMultiPlayCount, setPendingMultiPlayCount] = useState<number | null>(null);
   const [startPlayInput, setStartPlayInput] = useState<string>('1');
   const [startModalError, setStartModalError] = useState<string>('');
@@ -188,6 +211,9 @@ export default function App() {
       if (data.success) {
         if (typeof data.serverNow === 'number') {
           setServerClockOffset(data.serverNow - Date.now());
+        }
+        if (data.machineOps && typeof data.machineOps.suspended === 'boolean') {
+          setIsMachineSuspended(data.machineOps.suspended);
         }
         if (Array.isArray(data.machines) && data.machines.length > 0) {
           setMachines(data.machines);
@@ -339,19 +365,85 @@ export default function App() {
     return () => clearInterval(hb);
   }, [activeTurnId, selectedMember, selectedMachineIndex]);
 
-  const handleOpenStartModal = () => {
-    if (isStarting || isFinishing || activeTurnId || lockedByOther) return;
-    if (selectedBalance.tickets < 1) {
-      setStatusMessage(`${selectedMember}님의 보유 뽑기권이 부족합니다.`);
-      return;
+  // 정기 자동 리셋(10:30, 14:00, 23:00 KST) 10초 전 카운트다운 브로드캐스트 & 5초 전 락다운
+  useEffect(() => {
+    let lastTriggeredResetTs = 0;
+    const tick = () => {
+      const approxNow = Date.now() + serverClockOffset;
+      const next = getNextScheduledResetKst(approxNow);
+      const diffMs = next.ts - approxNow;
+
+      // 리셋 직후 2초간 락다운 유지하며 최신 상태 자동 동기화
+      if (lastTriggeredResetTs > 0 && approxNow - lastTriggeredResetTs < 2200) {
+        setResetCountdownSec(0);
+        setIsResetLockdown(true);
+        return;
+      }
+
+      if (diffMs > 0 && diffMs <= 10000) {
+        const sec = Math.max(1, Math.min(10, Math.ceil(diffMs / 1000)));
+        setResetCountdownSec(sec);
+        setResetTargetLabel(next.label);
+        setIsResetLockdown(diffMs <= 5000);
+        if (diffMs <= 5000) {
+          setIsStartModalOpen(false);
+          setIsNickConfirmOpen(false);
+          setPendingMultiPlayCount(null);
+        }
+        if (diffMs <= 350 && lastTriggeredResetTs !== next.ts) {
+          lastTriggeredResetTs = next.ts;
+          setTimeout(() => fetchState(), 600);
+          setTimeout(() => fetchState(), 2300);
+        }
+      } else {
+        setResetCountdownSec(null);
+        setIsResetLockdown(false);
+      }
+    };
+    tick();
+    const timer = setInterval(tick, 250);
+    return () => clearInterval(timer);
+  }, [serverClockOffset, fetchState]);
+
+  const hasConfirmedNickOnDevice = () => {
+    try {
+      const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
+      return Boolean(ua && localStorage.getItem(NICK_CONFIRMED_UA_KEY) === ua);
+    } catch {
+      return false;
     }
+  };
+
+  const openStartModalDirectly = () => {
     setStartPlayInput('1');
     setStartModalError('');
     setIsStartModalOpen(true);
   };
 
+  const handleConfirmDeviceNick = () => {
+    try {
+      const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
+      if (ua) localStorage.setItem(NICK_CONFIRMED_UA_KEY, ua);
+    } catch {}
+    setIsNickConfirmOpen(false);
+    openStartModalDirectly();
+  };
+
+  const handleOpenStartModal = () => {
+    if (isStarting || isFinishing || activeTurnId || lockedByOther || isMachineSuspended || isResetLockdown) return;
+    if (selectedBalance.tickets < 1) {
+      setStatusMessage(`${selectedMember}님의 보유 뽑기권이 부족합니다.`);
+      return;
+    }
+    if (!hasConfirmedNickOnDevice()) {
+      setIsNickConfirmOpen(true);
+      return;
+    }
+    openStartModalDirectly();
+  };
+
   const handleStartTurn = async (requestedPlayCount: number, confirmedMultiWarning = false) => {
-    if (isStarting || isFinishing || activeTurnId || lockedByOther) return;
+    if (isStarting || isFinishing || activeTurnId || lockedByOther || isMachineSuspended || isResetLockdown) return;
     const maxTickets = selectedBalance.tickets;
     if (!Number.isInteger(requestedPlayCount) || requestedPlayCount < 1) {
       setStartModalError('1 이상의 숫자를 입력해주세요.');
@@ -951,7 +1043,7 @@ export default function App() {
           turnKey={activeTurnKey}
           onTurnFinish={handleTurnFinish}
           onStartTurnRequest={handleOpenStartModal}
-          canStartTurn={selectedBalance.tickets >= 1 && !activeTurnId && !isFinishing && !lockedByOther}
+          canStartTurn={selectedBalance.tickets >= 1 && !activeTurnId && !isFinishing && !lockedByOther && !isMachineSuspended && !isResetLockdown}
           selectedMember={selectedMember}
           selectedMemberTickets={selectedBalance.tickets}
           isStarting={isStarting}
@@ -1155,6 +1247,132 @@ export default function App() {
           );
         })()}
       </main>
+
+      {/* 정기 리셋 10초 전 카운트다운 브로드캐스트 팝업 */}
+      {resetCountdownSec !== null && resetCountdownSec >= 1 && (
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-[80] w-[calc(100%-24px)] max-w-md pointer-events-none">
+          <div
+            className={`px-5 py-3.5 rounded-2xl border shadow-2xl backdrop-blur-md text-center transition-all ${
+              resetCountdownSec <= 5
+                ? 'bg-rose-950/95 border-rose-400/80 text-rose-100 animate-pulse'
+                : 'bg-amber-950/95 border-amber-400/80 text-amber-100'
+            }`}
+          >
+            <div className="text-[11px] font-bold opacity-85 mb-0.5">
+              ⏰ 정기 재정렬 · 리필 안내 ({resetTargetLabel} KST)
+            </div>
+            <div className="text-base sm:text-lg font-black tracking-tight">
+              {resetCountdownSec}초 뒤에 뽑기가 리셋됩니다.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 정기 리셋 5초 전 락다운 오버레이 */}
+      {isResetLockdown && (
+        <div className="fixed inset-0 z-[75] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+          <div className="bg-slate-900 border border-rose-500/60 w-full max-w-sm rounded-3xl p-6 shadow-2xl text-center space-y-4">
+            <div className="w-16 h-16 mx-auto rounded-2xl bg-rose-500/20 border border-rose-400/50 flex items-center justify-center text-3xl font-black text-rose-300 font-mono">
+              {resetCountdownSec && resetCountdownSec > 0 ? resetCountdownSec : '⏳'}
+            </div>
+            <div className="space-y-1.5">
+              <div className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-rose-500/20 border border-rose-400/40 text-rose-300 text-[11px] font-black">
+                🔒 페이지 일시 잠금 (LOCKDOWN)
+              </div>
+              <h3 className="text-lg font-black text-white">
+                {resetCountdownSec && resetCountdownSec > 0
+                  ? `${resetCountdownSec}초 뒤에 뽑기가 리셋됩니다.`
+                  : '뽑기판 리셋 진행 중...'}
+              </h3>
+              <p className="text-xs text-slate-300 leading-relaxed break-keep">
+                정기 재정렬 및 리필({resetTargetLabel}) 적용을 위해 뽑기 페이지가 잠시 잠겼습니다. 리셋이 완료되면 자동으로 해제됩니다.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 전 기기 운영 중단(점검중) 오버레이 */}
+      {isMachineSuspended && !isResetLockdown && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-sm">
+          <div className="bg-slate-900 border border-amber-500/60 w-full max-w-md rounded-3xl p-6 shadow-2xl text-center space-y-4">
+            <div className="w-16 h-16 mx-auto rounded-2xl bg-amber-500/20 border border-amber-400/50 flex items-center justify-center text-3xl">
+              🛠️
+            </div>
+            <div className="space-y-2">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-400/40 text-amber-300 text-xs font-black">
+                전 기기 운영 중단 · 점검중
+              </div>
+              <h3 className="text-xl font-black text-white">현재 전체 뽑기판 점검중입니다</h3>
+              <p className="text-xs sm:text-sm text-slate-300 leading-relaxed break-keep">
+                관리자에 의해 모든 뽑기 기기 운영이 일시 중단되었습니다.
+                <br />
+                운영이 재개되면 별도 새로고침 없이 자동으로 해제됩니다.
+              </p>
+            </div>
+            <div className="pt-1 flex items-center justify-center gap-2">
+              <a
+                href={WINNER_SITE_URL}
+                className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-bold transition-colors"
+              >
+                식사 배틀로 복귀
+              </a>
+              <button
+                type="button"
+                onClick={fetchState}
+                className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black cursor-pointer transition-colors"
+              >
+                상태 새로고침
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 기기 최초 1회 유저(닉) 확인 팝업 (기기별 1회만 확인, 닉네임 고정 없음) */}
+      {isNickConfirmOpen && (
+        <div
+          className="fixed inset-0 z-[65] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+          onClick={() => setIsNickConfirmOpen(false)}
+        >
+          <div
+            className="bg-slate-900 border border-amber-400/60 w-full max-w-sm rounded-3xl p-6 shadow-2xl space-y-4 text-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-12 h-12 mx-auto rounded-2xl bg-amber-500/20 border border-amber-400/50 flex items-center justify-center text-2xl">
+              🙋
+            </div>
+            <div className="space-y-2">
+              <h3 className="text-base sm:text-lg font-black text-white break-keep">
+                반드시 올바른 유저(닉)를 선택했습니까?
+              </h3>
+              <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-500/15 border border-amber-400/45 text-amber-300 text-sm font-black">
+                <span>현재 선택된 닉네임:</span>
+                <span className="text-white">{selectedMember}</span>
+              </div>
+              <p className="text-xs text-slate-300 leading-relaxed break-keep">
+                타인의 닉네임으로 실수하지 않도록 이 기기에서 최초 1회만 확인합니다. 확인 후에는 다시 묻지 않으며, 닉네임은 언제든 자유롭게 바꿀 수 있습니다.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-2.5 pt-1">
+              <button
+                type="button"
+                onClick={() => setIsNickConfirmOpen(false)}
+                className="py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs sm:text-sm cursor-pointer"
+              >
+                다시 선택
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeviceNick}
+                className="py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-xs sm:text-sm shadow-lg shadow-amber-500/20 cursor-pointer"
+              >
+                네, 맞습니다
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 뽑기 시작 횟수 선택 & 연속 5가챠(+1 무료) 모달 */}
       {isStartModalOpen && (() => {

@@ -196,7 +196,7 @@ export const PRIZE_SPECS: PrizeSpec[] = [
     label: '산드로네 쿠션 인형 #6',
     title: 'SANDRONE',
     difficultyText: '난이도 6.5 (입체 인형)',
-    rewardSol: 0.01,
+    rewardSol: 0.005,
     imgSrc: '/assets/sandrone_plush.png',
     frontAccent: '#fde68a',
     frontBg: '#7f1d1d',
