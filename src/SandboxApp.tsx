@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useMemo } from 'react';
-import { Sliders, RotateCcw, Trophy, Cpu, Layers, Sparkles, Eye } from 'lucide-react';
+import { Sliders, RotateCcw, Trophy, Cpu, Layers, Sparkles, Eye, Info } from 'lucide-react';
 import {
   SANDBOX_DEFAULT_PHYSICS_TUNING,
   PhysicsTuning,
@@ -16,6 +16,7 @@ import {
 } from '@/constants/gacha';
 import { GachaBoxItem } from '@/types/gacha';
 import { RapierUfoMachine3D, TurnFinishPayload } from '@/components/RapierUfoMachine3D';
+import { GachaPrizeInfoModal } from '@/components/GachaPrizeInfoModal';
 import { fireSafeConfetti } from '@/lib/confetti';
 
 interface WinLogEntry {
@@ -33,6 +34,7 @@ export default function SandboxApp() {
   const [activeTurnKey, setActiveTurnKey] = useState<string | null>(null);
   const [tuning, setTuning] = useState<PhysicsTuning>(SANDBOX_DEFAULT_PHYSICS_TUNING);
   const [showTuning, setShowTuning] = useState(true);
+  const [isPrizeInfoOpen, setIsPrizeInfoOpen] = useState(false);
   const [totalPlays, setTotalPlays] = useState(0);
   const [totalWins, setTotalWins] = useState(0);
   const [winLogs, setWinLogs] = useState<WinLogEntry[]>([]);
@@ -136,6 +138,14 @@ export default function SandboxApp() {
                 당첨 <strong className="text-amber-300">{totalWins}</strong> / 시도 {totalPlays}
               </span>
             </div>
+            <button
+              type="button"
+              onClick={() => setIsPrizeInfoOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-violet-500/15 hover:bg-violet-500/25 border border-violet-400/50 text-violet-300 hover:text-violet-200 text-xs font-black transition-colors cursor-pointer"
+            >
+              <Info className="w-3.5 h-3.5 text-violet-400" />
+              <span>뽑기정보</span>
+            </button>
             <button
               type="button"
               onClick={() => setShowTuning((v) => !v)}
@@ -306,6 +316,12 @@ export default function SandboxApp() {
           </section>
         </div>
       </main>
+      <GachaPrizeInfoModal
+        isOpen={isPrizeInfoOpen}
+        onClose={() => setIsPrizeInfoOpen(false)}
+        currentMachineIndex={machineIndex}
+        onSelectMachine={(idx) => !activeTurnKey && setMachineIndex(idx)}
+      />
     </div>
   );
 }

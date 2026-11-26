@@ -31,6 +31,7 @@ import {
   GACHA_SLOT_DIFFICULTY_TEXT,
   GACHA_SLOT_LABELS,
   GACHA_SLOT_REWARD_AMOUNTS,
+  GACHA_SLOT_SHORT_LABELS,
   getBoxRewardAmount,
   getMachineLabel,
 } from '@/constants/gacha';
@@ -42,6 +43,7 @@ import { LeaderboardModal } from '@/components/LeaderboardModal';
 import { RewardModal } from '@/components/RewardModal';
 import { AdminLoginModal } from '@/components/AdminLoginModal';
 import { GachaLiveChat } from '@/components/GachaLiveChat';
+import { GachaPrizeInfoModal } from '@/components/GachaPrizeInfoModal';
 
 const WINNER_SITE_URL = 'https://win.silverruler.xyz';
 const NICK_CONFIRMED_UA_KEY = 'aial_gacha_nick_confirmed_ua_v1';
@@ -138,6 +140,7 @@ export default function App() {
 
   const [isLeaderboardOpen, setIsLeaderboardOpen] = useState<boolean>(false);
   const [isUfoNoticeOpen, setIsUfoNoticeOpen] = useState<boolean>(false);
+  const [isPrizeInfoOpen, setIsPrizeInfoOpen] = useState<boolean>(false);
   const [openNotice261126, setOpenNotice261126] = useState<boolean>(true);
   const [openNotice261125, setOpenNotice261125] = useState<boolean>(false);
   const [openNotice261124, setOpenNotice261124] = useState<boolean>(false);
@@ -397,7 +400,6 @@ export default function App() {
   }, [handleSelectMachine, selectedMachineIndex]);
 
   const machineSummaries = useMemo(() => {
-    const shortLabels = ['1.프리렌', '2.네즈코', '3.노엘', '4.레제', '5.바니카', '6.산드로네'];
     const approxNow = Date.now() + serverClockOffset;
     return Array.from({ length: GACHA_MACHINE_COUNT }, (_, idx) => {
       const m = machines[idx];
@@ -410,7 +412,7 @@ export default function App() {
           : null;
       return {
         index: idx,
-        shortName: shortLabels[idx] || `${idx + 1}번`,
+        shortName: GACHA_SLOT_SHORT_LABELS[idx] || `${idx + 1}번`,
         hasStock,
         lockedBy,
       };
@@ -917,6 +919,16 @@ export default function App() {
             >
               <Megaphone className="w-3.5 h-3.5 text-cyan-400" />
               <span>UFO 공지</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsPrizeInfoOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-violet-500/15 hover:bg-violet-500/25 border border-violet-400/50 text-violet-300 hover:text-violet-200 text-xs font-black transition-all shadow-sm cursor-pointer"
+              title="현재 뽑기판 상자 및 3D 인형 전체 스펙 보기"
+            >
+              <Info className="w-3.5 h-3.5 text-violet-400" />
+              <span>뽑기정보</span>
             </button>
 
             {isAdmin ? (
@@ -1999,7 +2011,7 @@ export default function App() {
         const boxSpecs = [
           { slot: 0, shortName: '1번 프리렌', fullName: '프리렌 박스 #1', difficulty: '5 / 10 (보통)', shortDiff: '난이도 5', note: '가볍고 컴팩트하여 회전·기울기 공략이 수월한 입문용 상자' },
           { slot: 1, shortName: '2번 네즈코', fullName: '네즈코 박스 #2', difficulty: '6 / 10 (중상)', shortDiff: '난이도 6', note: '표준 규격과 무게의 정석 아케이드 브릿지 밸런스 상자' },
-          { slot: 2, shortName: '3번 노엘 실바', fullName: '노엘 실바 박스 #3', difficulty: '7 / 10 (어려움)', shortDiff: '난이도 7', note: '두툼하고 길며 묵직해 정밀한 모서리·각도 공략이 필요한 상자' },
+          { slot: 2, shortName: '3번 페른', fullName: '페른 박스 #3', difficulty: '5.5 / 10 (보통)', shortDiff: '난이도 5.5', note: '균형 잡힌 중경량 박스 (전체 12종 상세 스펙은 상단 [뽑기정보] 참조)' },
           { slot: 3, shortName: '4번 레제', fullName: '레제 박스 #4', difficulty: '8 / 10 (고난도)', shortDiff: '난이도 8', note: '중앙 Bar 틈새(0.73) 여유가 좁고 가장 길고 무거운 고난도 마스터 상자' },
           { slot: 4, shortName: '5번 바니카', fullName: '바니카 박스 #5', difficulty: '6.5 / 10 (중상·정사각)', shortDiff: '난이도 6.5', note: '정사각형에 가까운 와이드 스페셜 상자! 평면으로는 안 빠지며 옆으로 세우거나 지그시 눌러 넣는 공략이 유효합니다.' },
           { slot: 5, shortName: '6번 산드로네(인형)', fullName: '산드로네 쿠션 인형 #6', difficulty: '6.5 / 10 (중상·입체 쿠션)', shortDiff: '난이도 6.5', note: '최초의 3D 입체 다이컷 쿠션 인형! 푹신하고 얇은 두께(0.44)와 실루엣 복합 물리를 활용해 옆으로 기울이거나 눌러 넣으면 틈새로 쏙 빠집니다.' },
@@ -2299,6 +2311,13 @@ export default function App() {
       />
 
       {/* 관리자 로그인 모달 (서버 /api/admin/verify 연동) */}
+      <GachaPrizeInfoModal
+        isOpen={isPrizeInfoOpen}
+        onClose={() => setIsPrizeInfoOpen(false)}
+        currentMachineIndex={selectedMachineIndex}
+        onSelectMachine={handleSelectMachine}
+      />
+
       <AdminLoginModal
         isOpen={isAdminLoginOpen}
         onClose={() => setIsAdminLoginOpen(false)}
