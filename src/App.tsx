@@ -41,6 +41,7 @@ import { GachaWinModal } from '@/components/GachaWinModal';
 import { LeaderboardModal } from '@/components/LeaderboardModal';
 import { RewardModal } from '@/components/RewardModal';
 import { AdminLoginModal } from '@/components/AdminLoginModal';
+import { GachaLiveChat } from '@/components/GachaLiveChat';
 
 const WINNER_SITE_URL = 'https://win.silverruler.xyz';
 const NICK_CONFIRMED_UA_KEY = 'aial_gacha_nick_confirmed_ua_v1';
@@ -1246,6 +1247,9 @@ export default function App() {
             </section>
           );
         })()}
+
+        {/* 4. 실시간 뽑기방 채팅 · 건의함 (익명닉 + 12인 스티커) */}
+        <GachaLiveChat />
       </main>
 
       {/* 정기 리셋 10초 전 카운트다운 브로드캐스트 팝업 */}
