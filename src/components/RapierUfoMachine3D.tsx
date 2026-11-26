@@ -16,6 +16,8 @@ import {
   RotateCcw,
   Loader2,
   Activity,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
 import { GachaBoxItem } from '@/types/gacha';
 import { GACHA_PHYSICS, getBoxDimensions, getBoxRewardAmount, getSandboxRedBarHalfZ, isBoxAtInitialPose, isPlushSlot } from '@/constants/gacha';
@@ -295,11 +297,11 @@ function createPlushMaterial(imgSrc: string): THREE.MeshStandardMaterial {
   });
 }
 
-// 완전한 <> 다이아몬드 갈고리 형상 (원래 크기 · 닫힘 시 하단 끝단이 중앙 x≈0에서 맞닿아 틈 없음)
+// 롱 <> 다이아몬드 갈고리 형상 (+36% 연장 · 높이 0.44~0.64m 전 상품 하단까지 깊게 감싸며 닫힘 시 끝단이 중앙 x≈0에서 맞닿음)
 const ARM_SEGMENTS = [
-  { pos: [0.09, -0.17, 0] as const, rotZ: 0.49, half: [0.028, 0.195, 0.045] as const, mass: 0.11, isTip: false },
-  { pos: [0.08, -0.50, 0] as const, rotZ: -0.56, half: [0.026, 0.19, 0.052] as const, mass: 0.11, isTip: false },
-  { pos: [-0.10, -0.67, 0] as const, rotZ: 0.14, half: [0.085, 0.024, 0.072] as const, mass: 0.08, isTip: true },
+  { pos: [0.12, -0.23, 0] as const, rotZ: 0.48, half: [0.028, 0.26, 0.045] as const, mass: 0.12, isTip: false },
+  { pos: [0.11, -0.68, 0] as const, rotZ: -0.53, half: [0.026, 0.256, 0.052] as const, mass: 0.12, isTip: false },
+  { pos: [-0.115, -0.91, 0] as const, rotZ: 0.14, half: [0.095, 0.026, 0.078] as const, mass: 0.09, isTip: true },
 ];
 
 const CLAW_OPEN_ANGLE = 0.72;
@@ -1946,6 +1948,13 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           renderer.setSize(w, h);
         };
         window.addEventListener('resize', handleResize);
+        const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => handleResize?.()) : null;
+        if (ro && container) ro.observe(container);
+        const origHandleResize = handleResize;
+        handleResize = () => {
+          origHandleResize?.();
+        };
+        (container as any).__rapierRo = ro;
       })
       .catch((err) => {
         console.error('Rapier3D init failed:', err);
@@ -1956,6 +1965,9 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
       disposed = true;
       cancelAnimationFrame(animId);
       if (handleResize) window.removeEventListener('resize', handleResize);
+      try {
+        (container as any).__rapierRo?.disconnect();
+      } catch {}
       if (renderer) renderer.dispose();
       if (worldRef) {
         try {
@@ -2008,9 +2020,55 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
     }
   };
 
+  const [isFocusedMode, setIsFocusedMode] = useState(false);
+  const isFocusedModeRef = useRef(false);
+  const isMyTurnKeyLockRef = useRef(false);
+  useEffect(() => {
+    isFocusedModeRef.current = isFocusedMode;
+  }, [isFocusedMode]);
+  useEffect(() => {
+    isMyTurnKeyLockRef.current = isMyTurn || isFinishing;
+    if (typeof window !== 'undefined' && window.innerWidth >= 768) {
+      if (isMyTurn) {
+        setIsFocusedMode(true);
+      } else if (!isFinishing) {
+        setIsFocusedMode(false);
+      }
+    }
+  }, [isMyTurn, isFinishing]);
+
+  useEffect(() => {
+    if (!isFocusedMode || typeof document === 'undefined') return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [isFocusedMode]);
+
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.repeat) return;
+      const target = e.target as HTMLElement | null;
+      const isTyping = Boolean(
+        target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)
+      );
+
+      // 데스크톱 플레이 중 또는 집중 확대 모드에서는 방향키/스페이스로 브라우저가 스크롤되지 않도록 완전 차단 (key repeat 포함!)
+      if (
+        !isTyping &&
+        (isMyTurnKeyLockRef.current || isFocusedModeRef.current) &&
+        (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === ' ')
+      ) {
+        e.preventDefault();
+      }
+
+      if (e.key === 'Escape' && isFocusedModeRef.current && !isMyTurnKeyLockRef.current) {
+        e.preventDefault();
+        setIsFocusedMode(false);
+        return;
+      }
+
+      if (e.repeat || isTyping) return;
       if ((e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') && phaseRef.current === 'ready_right') {
         e.preventDefault();
         if (cameraViewRef.current !== 'front') {
@@ -2043,7 +2101,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
       }
     };
 
-    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keydown', onKeyDown, { passive: false });
     window.addEventListener('keyup', onKeyUp);
     return () => {
       window.removeEventListener('keydown', onKeyDown);
@@ -2081,8 +2139,21 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
   })();
 
   return (
-    <div className="w-full rounded-3xl overflow-hidden border border-emerald-500/35 bg-slate-950 shadow-2xl shadow-emerald-950/30">
-      <div className="px-4 py-2.5 bg-slate-900/95 border-b border-slate-800 space-y-2">
+    <div
+      className={
+        isFocusedMode
+          ? 'fixed inset-0 z-[60] bg-slate-950/95 backdrop-blur-md p-3 sm:p-5 flex items-center justify-center'
+          : 'w-full'
+      }
+    >
+    <div
+      className={
+        isFocusedMode
+          ? 'w-full max-w-5xl h-full max-h-[94vh] rounded-3xl overflow-hidden border-2 border-emerald-400/60 bg-slate-950 shadow-2xl shadow-emerald-950/50 flex flex-col'
+          : 'w-full rounded-3xl overflow-hidden border border-emerald-500/35 bg-slate-950 shadow-2xl shadow-emerald-950/30'
+      }
+    >
+      <div className="px-4 py-2.5 bg-slate-900/95 border-b border-slate-800 space-y-2 shrink-0">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-[11px] font-black shrink-0">
@@ -2095,14 +2166,29 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
             <span className="text-xs font-bold text-slate-200 truncate">{phaseBannerText}</span>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setSoundEnabled((v) => !v)}
-            className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors cursor-pointer shrink-0"
-            title={soundEnabled ? '효과음 끄기' : '효과음 켜기'}
-          >
-            {soundEnabled ? <Volume2 className="w-4 h-4 text-emerald-400" /> : <VolumeX className="w-4 h-4 text-slate-500" />}
-          </button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsFocusedMode((v) => !v)}
+              className={`hidden sm:inline-flex items-center gap-1 px-2 py-1.5 rounded-lg border text-[11px] font-black transition-colors cursor-pointer ${
+                isFocusedMode
+                  ? 'bg-emerald-500/20 border-emerald-400/60 text-emerald-200 hover:bg-emerald-500/30'
+                  : 'bg-slate-800 border-slate-700 text-slate-300 hover:text-white hover:bg-slate-700'
+              }`}
+              title={isFocusedMode ? '집중 확대 모드 종료' : '데스크톱 집중 확대 모드 (스크롤 잠금)'}
+            >
+              {isFocusedMode ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+              <span>{isFocusedMode ? '축소' : '확대'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setSoundEnabled((v) => !v)}
+              className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors cursor-pointer shrink-0"
+              title={soundEnabled ? '효과음 끄기' : '효과음 켜기'}
+            >
+              {soundEnabled ? <Volume2 className="w-4 h-4 text-emerald-400" /> : <VolumeX className="w-4 h-4 text-slate-500" />}
+            </button>
+          </div>
         </div>
 
         {machineSummaries.length > 0 && (
@@ -2161,7 +2247,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
         )}
       </div>
 
-      <div className="relative w-full h-[300px] sm:h-[450px] bg-[#040c14] select-none">
+      <div className={`relative w-full bg-[#040c14] select-none ${isFocusedMode ? 'flex-1 min-h-[360px]' : 'h-[300px] sm:h-[450px]'}`}>
         <div ref={mountRef} className="w-full h-full" />
 
         <button
@@ -2497,6 +2583,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           </div>
         )}
       </div>
+    </div>
     </div>
   );
 };

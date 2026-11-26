@@ -921,6 +921,96 @@ export default function App() {
     }
   };
 
+  // 전역 모달/확인창 단축키: Enter = 확인, Escape = 취소/닫기
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.isComposing) return;
+      if (e.key !== 'Enter' && e.key !== 'Escape') return;
+      const target = e.target as HTMLElement | null;
+      const inTextarea = Boolean(target && target.tagName === 'TEXTAREA');
+
+      // 1) 연속 다중 뽑기 경고 확인창 (최상단)
+      if (pendingMultiPlayCount !== null) {
+        e.preventDefault();
+        if (e.key === 'Escape') {
+          if (!isStarting) setPendingMultiPlayCount(null);
+        } else if (e.key === 'Enter' && !isStarting) {
+          handleStartTurn(pendingMultiPlayCount, true);
+        }
+        return;
+      }
+
+      // 2) 기기 최초 1회 유저(닉) 확인 팝업
+      if (isNickConfirmOpen && !isMachineSuspended) {
+        e.preventDefault();
+        if (e.key === 'Escape') setIsNickConfirmOpen(false);
+        else if (e.key === 'Enter') handleConfirmDeviceNick();
+        return;
+      }
+
+      // 3) 뽑기 시작 횟수 선택 모달
+      if (isStartModalOpen && !isMachineSuspended) {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          if (!isStarting) setIsStartModalOpen(false);
+        } else if (e.key === 'Enter' && !inTextarea && !isStarting) {
+          const parsed = parseInt(startPlayInput, 10);
+          const maxTickets = selectedBalance.tickets;
+          if (!isNaN(parsed) && parsed >= 1 && parsed <= maxTickets) {
+            e.preventDefault();
+            handleStartTurn(parsed);
+          }
+        }
+        return;
+      }
+
+      // 4) SOL -> 뽑기권 교환 모달
+      if (isSolExchangeModalOpen && !isMachineSuspended) {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          if (!isExchangingSol) setIsSolExchangeModalOpen(false);
+        } else if (e.key === 'Enter' && !inTextarea && !isExchangingSol) {
+          const parsed = parseInt(solExchangeInput, 10);
+          if (!isNaN(parsed) && parsed >= 1 && parsed <= maxSolExchangeTickets) {
+            e.preventDefault();
+            handleConfirmSolExchange(parsed);
+          }
+        }
+        return;
+      }
+
+      // 5) 당첨 축하 모달
+      if (activeWinModal) {
+        if (e.key === 'Escape' || (e.key === 'Enter' && !inTextarea)) {
+          e.preventDefault();
+          setActiveWinModal(null);
+          setActiveWinRefundedTickets(0);
+          if (pendingNextTurnKey) {
+            setActiveTurnKey(pendingNextTurnKey);
+            setPendingNextTurnKey(null);
+          }
+        }
+        return;
+      }
+
+      // 6) 기타 정보/관리자 모달 (Esc 닫기 · 공지는 Enter로도 확인 닫기)
+      if (e.key === 'Escape') {
+        if (isAdminLoginOpen) { e.preventDefault(); setIsAdminLoginOpen(false); return; }
+        if (isPresenceOpen) { e.preventDefault(); setIsPresenceOpen(false); return; }
+        if (isUfoNoticeOpen) { e.preventDefault(); setIsUfoNoticeOpen(false); return; }
+        if (isPrizeInfoOpen) { e.preventDefault(); setIsPrizeInfoOpen(false); return; }
+        if (isRewardModalOpen) { e.preventDefault(); setIsRewardModalOpen(false); setRewardStartApply(false); return; }
+        if (isLeaderboardOpen) { e.preventDefault(); setIsLeaderboardOpen(false); return; }
+      } else if (e.key === 'Enter' && !inTextarea) {
+        if (isUfoNoticeOpen) { e.preventDefault(); setIsUfoNoticeOpen(false); return; }
+        if (isPrizeInfoOpen) { e.preventDefault(); setIsPrizeInfoOpen(false); return; }
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  });
+
   if (!authChecked) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-400">
