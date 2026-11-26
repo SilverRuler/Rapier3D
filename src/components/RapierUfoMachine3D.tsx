@@ -557,20 +557,20 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           if (view === 'top') {
             return {
               fov,
-              pos: new THREE.Vector3(0, 5.45 * Math.max(1, scale * 0.88), 0.52),
-              look: new THREE.Vector3(0, 0.72, 0),
+              pos: new THREE.Vector3(0, 6.2 * Math.max(1, scale * 0.88), 0.56),
+              look: new THREE.Vector3(0, 0.78, 0),
             };
           }
           if (view === 'right') {
             return {
               fov,
-              pos: new THREE.Vector3(4.55 * Math.max(1, scale * 0.85), 2.15 * (1 + (scale - 1) * 0.3), 0),
-              look: new THREE.Vector3(0, 0.82, 0),
+              pos: new THREE.Vector3(5.35 * Math.max(1, scale * 0.85), 2.48 * (1 + (scale - 1) * 0.3), 0),
+              look: new THREE.Vector3(0, 1.05, 0),
             };
           }
-          const lookY = 0.76;
-          const baseY = 3.25 * (1 + (scale - 1) * 0.62);
-          const baseZ = 4.65 * scale;
+          const lookY = 0.98;
+          const baseY = 3.55 * (1 + (scale - 1) * 0.62);
+          const baseZ = 5.25 * scale;
           const clampedTiptoe = Math.max(0, Math.min(45, tiptoeDeg));
           if (clampedTiptoe <= 0) {
             return {
@@ -638,7 +638,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
         scene.add(cabinetGroup);
 
         const chuteFloor = new THREE.Mesh(
-          new THREE.BoxGeometry(4.0, 0.15, 3.2),
+          new THREE.BoxGeometry(4.0, 0.15, 4.16),
           new THREE.MeshStandardMaterial({
             color: '#064e3b',
             emissive: '#059669',
@@ -651,11 +651,11 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
         chuteFloor.receiveShadow = true;
         cabinetGroup.add(chuteFloor);
 
-        const gridHelper = new THREE.GridHelper(3.8, 10, '#10b981', '#065f46');
+        const gridHelper = new THREE.GridHelper(4.0, 10, '#10b981', '#065f46');
         gridHelper.position.set(0, -1.46, 0);
         cabinetGroup.add(gridHelper);
 
-        const pillarGeo = new THREE.CylinderGeometry(0.07, 0.07, 4.9, 16);
+        const pillarGeo = new THREE.CylinderGeometry(0.07, 0.07, 5.5, 16);
         const pillarMat = new THREE.MeshStandardMaterial({
           color: '#1e293b',
           emissive: '#10b981',
@@ -665,10 +665,10 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
         });
         const pillarX = GACHA_PHYSICS.CABINET_HALF_X + 0.1;
         [
-          [-pillarX, 0.9, -1.48],
-          [pillarX, 0.9, -1.48],
-          [-pillarX, 0.9, 1.48],
-          [pillarX, 0.9, 1.48],
+          [-pillarX, 1.2, -1.98],
+          [pillarX, 1.2, -1.98],
+          [-pillarX, 1.2, 1.98],
+          [pillarX, 1.2, 1.98],
         ].forEach(([px, py, pz]) => {
           const p = new THREE.Mesh(pillarGeo, pillarMat);
           p.position.set(px, py, pz);
@@ -676,10 +676,10 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
         });
 
         const frameBarMat = new THREE.MeshStandardMaterial({ color: '#334155', metalness: 0.8, roughness: 0.25 });
-        const railSideGeo = new THREE.BoxGeometry(0.12, 0.12, 3.1);
+        const railSideGeo = new THREE.BoxGeometry(0.12, 0.12, 4.12);
         [-pillarX, pillarX].forEach((rx) => {
           const r = new THREE.Mesh(railSideGeo, frameBarMat);
-          r.position.set(rx, 3.25, 0);
+          r.position.set(rx, 3.82, 0);
           cabinetGroup.add(r);
         });
 
@@ -687,14 +687,14 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           new THREE.BoxGeometry(GACHA_PHYSICS.BAR_LENGTH + 0.2, 0.1, 0.14),
           new THREE.MeshStandardMaterial({ color: '#64748b', metalness: 0.85, roughness: 0.2 })
         );
-        gantryBeam.position.set(0, 3.25, GACHA_PHYSICS.CLAW_HOME_Z);
+        gantryBeam.position.set(0, 3.82, GACHA_PHYSICS.CLAW_HOME_Z);
         scene.add(gantryBeam);
 
         const trolleyMesh = new THREE.Mesh(
           new THREE.BoxGeometry(0.28, 0.16, 0.24),
           new THREE.MeshStandardMaterial({ color: '#10b981', metalness: 0.75, roughness: 0.2 })
         );
-        trolleyMesh.position.set(GACHA_PHYSICS.CLAW_HOME_X, 3.25, GACHA_PHYSICS.CLAW_HOME_Z);
+        trolleyMesh.position.set(GACHA_PHYSICS.CLAW_HOME_X, 3.82, GACHA_PHYSICS.CLAW_HOME_Z);
         scene.add(trolleyMesh);
 
         const acrylicMat = new THREE.MeshPhysicalMaterial({
@@ -705,14 +705,14 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           metalness: 0.1,
           side: THREE.DoubleSide,
         });
-        const backGlass = new THREE.Mesh(new THREE.PlaneGeometry(GACHA_PHYSICS.BAR_LENGTH + 0.16, 3.4), acrylicMat);
-        backGlass.position.set(0, 0.8, -1.46);
+        const backGlass = new THREE.Mesh(new THREE.PlaneGeometry(GACHA_PHYSICS.BAR_LENGTH + 0.16, 4.0), acrylicMat);
+        backGlass.position.set(0, 1.1, -1.96);
         cabinetGroup.add(backGlass);
 
         [-(GACHA_PHYSICS.CABINET_HALF_X + 0.06), GACHA_PHYSICS.CABINET_HALF_X + 0.06].forEach((sx) => {
-          const sideGlass = new THREE.Mesh(new THREE.PlaneGeometry(2.94, 3.4), acrylicMat);
+          const sideGlass = new THREE.Mesh(new THREE.PlaneGeometry(3.96, 4.0), acrylicMat);
           sideGlass.rotation.y = Math.PI / 2;
-          sideGlass.position.set(sx, 0.8, 0);
+          sideGlass.position.set(sx, 1.1, 0);
           cabinetGroup.add(sideGlass);
         });
 
@@ -724,12 +724,12 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           roughness: 0.2,
         });
         const frontRampMesh = new THREE.Mesh(rampVisualGeo, rampVisualMat);
-        frontRampMesh.position.set(0, 1.24, 1.38);
+        frontRampMesh.position.set(0, 1.24, 1.86);
         frontRampMesh.rotation.x = -0.72;
         cabinetGroup.add(frontRampMesh);
 
         const backRampMesh = new THREE.Mesh(rampVisualGeo, rampVisualMat);
-        backRampMesh.position.set(0, 1.24, -1.38);
+        backRampMesh.position.set(0, 1.24, -1.86);
         backRampMesh.rotation.x = 0.72;
         cabinetGroup.add(backRampMesh);
 
@@ -899,8 +899,8 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
 
         [-GACHA_PHYSICS.CABINET_HALF_X - 0.1, GACHA_PHYSICS.CABINET_HALF_X + 0.1].forEach((wx) => {
           world.createCollider(
-            Rapier.ColliderDesc.cuboid(0.1, 2.2, 2.0)
-              .setTranslation(wx, 1.0, 0)
+            Rapier.ColliderDesc.cuboid(0.1, 2.5, 2.3)
+              .setTranslation(wx, 1.2, 0)
               .setFriction(0.25)
               .setRestitution(0)
               .setCollisionGroups(makeGroup(G_ENV, G_PRIZE)),
@@ -911,7 +911,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
         const qFront = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.72, 0, 0));
         world.createCollider(
           Rapier.ColliderDesc.cuboid(GACHA_PHYSICS.BAR_LENGTH / 2, 0.03, 0.42)
-            .setTranslation(0, 1.24, 1.38)
+            .setTranslation(0, 1.24, 1.86)
             .setRotation({ x: qFront.x, y: qFront.y, z: qFront.z, w: qFront.w })
             .setFriction(0.22)
             .setRestitution(0)
@@ -922,7 +922,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
         const qBack = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.72, 0, 0));
         world.createCollider(
           Rapier.ColliderDesc.cuboid(GACHA_PHYSICS.BAR_LENGTH / 2, 0.03, 0.42)
-            .setTranslation(0, 1.24, -1.38)
+            .setTranslation(0, 1.24, -1.86)
             .setRotation({ x: qBack.x, y: qBack.y, z: qBack.z, w: qBack.w })
             .setFriction(0.22)
             .setRestitution(0)
@@ -931,7 +931,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
         );
 
         world.createCollider(
-          Rapier.ColliderDesc.cuboid(2.2, 0.1, 2.0)
+          Rapier.ColliderDesc.cuboid(2.2, 0.1, 2.3)
             .setTranslation(0, -1.55, 0)
             .setFriction(0.55)
             .setRestitution(0.05)
@@ -990,7 +990,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
 
         const winchData = Rapier.JointData.prismatic({ x: 0, y: 0.18, z: 0 }, { x: 0, y: 0, z: 0 }, { x: 0, y: 1, z: 0 });
         winchData.limitsEnabled = true;
-        winchData.limits = [-1.95, 0.18];
+        winchData.limits = [-2.55, 0.18];
         const winchJoint = world.createImpulseJoint(winchData, gantryBody, carrierBody, true) as RAPIER.PrismaticImpulseJoint;
         winchJoint.configureMotorModel(Rapier.MotorModel.ForceBased);
         winchJoint.setMotorMaxForce(210);
@@ -1419,7 +1419,8 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
             }
           } else if (curPhase === 'lifting') {
             sim.phaseTimer += dt;
-            sim.targetHeadY = Math.min(GACHA_PHYSICS.CLAW_LIFT_Y, sim.targetHeadY + 1.22 * dt);
+            const prevTargetY = sim.targetHeadY;
+            sim.targetHeadY = Math.min(GACHA_PHYSICS.CLAW_LIFT_Y, sim.targetHeadY + 0.58 * dt);
             winchJoint.setMotorMaxForce(220);
 
             if (!sim.effectTriggeredThisTurn && sim.phaseTimer >= 0.12) {
@@ -1457,30 +1458,33 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
               }
             }
 
-            if (sim.targetHeadY >= GACHA_PHYSICS.CLAW_LIFT_Y || sim.phaseTimer >= 1.35) {
+            const reachedTop = prevTargetY >= GACHA_PHYSICS.CLAW_LIFT_Y - 0.005;
+            if ((reachedTop && sim.phaseTimer >= 0.35) || sim.phaseTimer >= 3.6) {
               sim.phaseTimer = 0;
-              setArmTorques(tuningRef.current.closeTorque);
-              setArmTargets(CLAW_OPEN_ANGLE);
+              setArmTorques(Math.max(4, tuningRef.current.liftTorque * 0.75));
               setCranePhase('releasing');
               playTone(392, 0.1);
             }
           } else if (curPhase === 'releasing') {
+            // 크레인 제자리 유지 상태에서 집게를 천천히 벌려 상품이 튕기지 않고 수직 드랍되도록 함
             sim.phaseTimer += dt;
-            setArmTargets(CLAW_OPEN_ANGLE);
-            sim.gantryX += (homeX - sim.gantryX) * Math.min(1, 3.6 * dt);
-            sim.gantryZ += (homeZ - sim.gantryZ) * Math.min(1, 3.6 * dt);
-            sim.targetHeadY += (homeY - sim.targetHeadY) * Math.min(1, 4.0 * dt);
+            const openProg = Math.min(1, sim.phaseTimer / 0.78);
+            const eased = openProg * openProg * (3 - 2 * openProg);
+            const openAngle = CLAW_CLOSE_TARGET * (1 - eased) + CLAW_OPEN_ANGLE * eased;
+            setArmTargets(openAngle);
 
-            if (sim.phaseTimer >= 0.55) {
+            if (sim.phaseTimer >= 1.25) {
               sim.phaseTimer = 0;
               sim.settleQuietTime = 0;
+              setArmTorques(tuningRef.current.closeTorque);
+              setArmTargets(CLAW_OPEN_ANGLE);
               setCranePhase('settling');
             }
           } else if (curPhase === 'settling') {
             sim.phaseTimer += dt;
-            sim.gantryX += (homeX - sim.gantryX) * Math.min(1, 4.5 * dt);
-            sim.gantryZ += (homeZ - sim.gantryZ) * Math.min(1, 4.5 * dt);
-            sim.targetHeadY += (homeY - sim.targetHeadY) * Math.min(1, 4.5 * dt);
+            sim.gantryX += (homeX - sim.gantryX) * Math.min(1, 2.2 * dt);
+            sim.gantryZ += (homeZ - sim.gantryZ) * Math.min(1, 2.2 * dt);
+            sim.targetHeadY += (homeY - sim.targetHeadY) * Math.min(1, 2.2 * dt);
 
             let allQuiet = true;
             for (const ent of prizeEntities.values()) {
@@ -1581,9 +1585,9 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           rightArmVisual.quaternion.set(rq.x, rq.y, rq.z, rq.w);
 
           gantryBeam.position.z = sim.gantryZ;
-          trolleyMesh.position.set(sim.gantryX, 3.25, sim.gantryZ);
+          trolleyMesh.position.set(sim.gantryX, 3.82, sim.gantryZ);
 
-          tmpThreePosA.set(sim.gantryX, 3.22, sim.gantryZ);
+          tmpThreePosA.set(sim.gantryX, 3.79, sim.gantryZ);
           tmpThreePosB.set(hp.x, hp.y + 0.14, hp.z);
           tmpThreeDir.subVectors(tmpThreePosB, tmpThreePosA);
           const cableLen = Math.max(0.08, tmpThreeDir.length());
