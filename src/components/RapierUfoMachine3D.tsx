@@ -428,11 +428,11 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
     }
   }, []);
 
-  const triggerStartPopup = useCallback(() => {
+  const triggerStartPopup = useCallback((playStartAudio: boolean) => {
     setShowStartPopup(true);
     if (startTimeoutRef.current) clearTimeout(startTimeoutRef.current);
     startTimeoutRef.current = setTimeout(() => setShowStartPopup(false), 1200);
-    if (soundEnabledRef.current && startAudioRef.current) {
+    if (playStartAudio && soundEnabledRef.current && startAudioRef.current) {
       try {
         startAudioRef.current.currentTime = 0;
         startAudioRef.current.play().catch(() => {});
@@ -481,9 +481,12 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
       setCameraView('front');
       cameraViewRef.current = 'front';
       setDroppedThisTurn(0);
-      simControlRef.current?.prepareTurnStart(itemsRef.current);
+      const curItems = itemsRef.current;
+      const isInitialPoseOnly =
+        curItems.length > 0 && curItems.every((it) => isBoxAtInitialPose(it));
+      simControlRef.current?.prepareTurnStart(curItems);
       setCranePhase('ready_right');
-      triggerStartPopup();
+      triggerStartPopup(isInitialPoseOnly);
     } else if (!isMyTurn && phaseRef.current !== 'idle') {
       setCranePhase('idle');
     }
@@ -1316,13 +1319,13 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
             const startPos = sim.turnStartPositions.get(ent.data.id) || ent.data.position;
             const startQuat = sim.turnStartQuats.get(ent.data.id) || ent.data.quaternion;
             const wasInitial = isBoxAtInitialPose(ent.data);
-            const movedHoriz =
-              Math.hypot(bp.x - startPos[0], bp.z - startPos[2]) > 0.025 ||
-              Math.abs(bp.y - startPos[1]) > 0.035;
+            const movedSlightly =
+              Math.hypot(bp.x - startPos[0], bp.z - startPos[2]) > 0.008 ||
+              Math.abs(bp.y - startPos[1]) > 0.015;
             const quatDot = Math.abs(
               bq.x * startQuat[0] + bq.y * startQuat[1] + bq.z * startQuat[2] + bq.w * startQuat[3]
             );
-            const nextIsInitial = wasInitial && !movedHoriz && quatDot >= 0.999;
+            const nextIsInitial = wasInitial && !movedSlightly && quatDot >= 0.9998;
             ent.data.isInitialState = nextIsInitial;
 
             return {
