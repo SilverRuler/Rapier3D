@@ -1852,7 +1852,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           for (const ent of prizeEntities.values()) {
             if (isPlushMachine) {
               const p = ent.body.translation();
-              if (Math.hypot(p.x - sim.gantryX, p.z - sim.gantryZ) <= 0.95) {
+              if (Math.hypot(p.x - sim.gantryX, p.z - sim.gantryZ) <= 1.35) {
                 ent.body.wakeUp();
               }
             } else {
