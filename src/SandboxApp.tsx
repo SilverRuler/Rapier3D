@@ -340,7 +340,7 @@ export default function SandboxApp() {
         isOpen={isPrizeInfoOpen}
         onClose={() => setIsPrizeInfoOpen(false)}
         currentMachineIndex={machineIndex}
-        onSelectMachine={(idx) => !activeTurnKey && setMachineIndex(idx)}
+        onSelectMachine={selectMachine}
       />
     </div>
   );

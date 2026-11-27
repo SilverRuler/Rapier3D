@@ -1698,13 +1698,34 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
         };
 
         simControlRef.current = {
-          syncFromItems: (nextItems) => syncFromItems(nextItems, false),
-          resetClawToHome,
-          prepareTurnStart,
-          startDescending,
-          applyLiveTuning,
-          rebuildPrizesForTuning,
-          updateRedBarSpacing,
+          syncFromItems: (nextItems) => {
+            if (disposed) return;
+            syncFromItems(nextItems, false);
+          },
+          resetClawToHome: () => {
+            if (disposed) return;
+            resetClawToHome();
+          },
+          prepareTurnStart: (nextItems) => {
+            if (disposed) return;
+            prepareTurnStart(nextItems);
+          },
+          startDescending: () => {
+            if (disposed) return;
+            startDescending();
+          },
+          applyLiveTuning: (t) => {
+            if (disposed) return;
+            applyLiveTuning(t);
+          },
+          rebuildPrizesForTuning: () => {
+            if (disposed) return;
+            rebuildPrizesForTuning();
+          },
+          updateRedBarSpacing: (halfZ) => {
+            if (disposed) return;
+            updateRedBarSpacing(halfZ);
+          },
         };
 
         syncFromItems(itemsRef.current, false);
@@ -2211,6 +2232,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
 
     return () => {
       disposed = true;
+      simControlRef.current = null;
       cancelAnimationFrame(animId);
       if (handleResize) window.removeEventListener('resize', handleResize);
       try {
