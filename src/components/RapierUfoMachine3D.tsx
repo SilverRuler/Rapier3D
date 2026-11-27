@@ -18,6 +18,8 @@ import {
   Activity,
   Maximize2,
   Minimize2,
+  LayoutGrid,
+  X,
 } from 'lucide-react';
 import { GachaBoxItem } from '@/types/gacha';
 import { GACHA_PHYSICS, getBoxDimensions, getBoxRewardAmount, getSandboxRedBarHalfZ, isBoxAtInitialPose, isPlushSlot } from '@/constants/gacha';
@@ -301,7 +303,7 @@ function createPlushMaterial(imgSrc: string): THREE.MeshStandardMaterial {
 const ARM_SEGMENTS = [
   { pos: [0.12, -0.23, 0] as const, rotZ: 0.48, half: [0.028, 0.26, 0.045] as const, mass: 0.12, isTip: false },
   { pos: [0.11, -0.68, 0] as const, rotZ: -0.53, half: [0.026, 0.256, 0.052] as const, mass: 0.12, isTip: false },
-  { pos: [-0.115, -0.91, 0] as const, rotZ: 0.14, half: [0.095, 0.026, 0.078] as const, mass: 0.09, isTip: true },
+  { pos: [-0.105, -0.91, 0] as const, rotZ: 0.03, half: [0.082, 0.025, 0.072] as const, mass: 0.09, isTip: true },
 ];
 
 const CLAW_OPEN_ANGLE = 0.72;
@@ -362,6 +364,19 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
   const [showFinishWin, setShowFinishWin] = useState(false);
   const [spectateLiveActive, setSpectateLiveActive] = useState(false);
   const [spectatePhase, setSpectatePhase] = useState<string>('');
+  const [isMachinePickerOpen, setIsMachinePickerOpen] = useState(false);
+
+  useEffect(() => {
+    if (!isMachinePickerOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setIsMachinePickerOpen(false);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isMachinePickerOpen]);
 
   const phaseRef = useRef<CranePhase>('idle');
   const soundEnabledRef = useRef(true);
@@ -2231,31 +2246,43 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
 
         {machineSummaries.length > 0 && (
           <div className="flex items-center justify-between gap-2 flex-wrap">
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
-              {machineSummaries.map((ms) => {
-                const isActive = ms.index === machineIndex;
-                return (
-                  <button
-                    key={ms.index}
-                    type="button"
-                    disabled={isCraneLockedToFront}
-                    onClick={() => onSelectMachine?.(ms.index)}
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-[11px] font-bold shrink-0 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
-                      isActive
-                        ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200 shadow-sm'
-                        : 'bg-slate-950/80 hover:bg-slate-800 border-slate-800 text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    <span
-                      className={`w-1.5 h-1.5 rounded-full ${
-                        ms.lockedBy ? 'bg-rose-400 animate-pulse' : ms.hasStock ? 'bg-emerald-400' : 'bg-slate-600'
+            <div className="flex items-center gap-1.5 min-w-0 flex-1">
+              <button
+                type="button"
+                disabled={isCraneLockedToFront}
+                onClick={() => setIsMachinePickerOpen(true)}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-gradient-to-r from-emerald-500/25 to-cyan-500/25 hover:from-emerald-500/35 hover:to-cyan-500/35 border border-emerald-400/60 text-emerald-200 text-[11px] font-black shrink-0 shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                title="전체 뽑기판 한눈에 보고 선택하기"
+              >
+                <LayoutGrid className="w-3.5 h-3.5" />
+                <span>선택</span>
+              </button>
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar min-w-0 flex-1">
+                {machineSummaries.map((ms) => {
+                  const isActive = ms.index === machineIndex;
+                  return (
+                    <button
+                      key={ms.index}
+                      type="button"
+                      disabled={isCraneLockedToFront}
+                      onClick={() => onSelectMachine?.(ms.index)}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-[11px] font-bold shrink-0 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+                        isActive
+                          ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200 shadow-sm'
+                          : 'bg-slate-950/80 hover:bg-slate-800 border-slate-800 text-slate-400 hover:text-slate-200'
                       }`}
-                    />
-                    <span>{ms.shortName}</span>
-                    {!ms.hasStock && <span className="text-[9px] text-rose-400 font-black">품절</span>}
-                  </button>
-                );
-              })}
+                    >
+                      <span
+                        className={`w-1.5 h-1.5 rounded-full ${
+                          ms.lockedBy ? 'bg-rose-400 animate-pulse' : ms.hasStock ? 'bg-emerald-400' : 'bg-slate-600'
+                        }`}
+                      />
+                      <span>{ms.shortName}</span>
+                      {!ms.hasStock && <span className="text-[9px] text-rose-400 font-black">품절</span>}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             {isAdmin && (
@@ -2622,6 +2649,90 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
         )}
       </div>
     </div>
+
+      {isMachinePickerOpen && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm"
+          onClick={() => setIsMachinePickerOpen(false)}
+        >
+          <div
+            className="bg-slate-900 border border-emerald-500/40 w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-4 py-3.5 bg-slate-950/90 border-b border-slate-800 flex items-center justify-between gap-2 shrink-0">
+              <div className="flex items-center gap-2">
+                <LayoutGrid className="w-4 h-4 text-emerald-400" />
+                <h3 className="text-sm sm:text-base font-black text-white">뽑기판 상품 선택 ({machineSummaries.length}종)</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsMachinePickerOpen(false)}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer"
+                aria-label="닫기"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-3 sm:p-4 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+              {machineSummaries.map((ms) => {
+                const spec = PRIZE_SPECS[ms.index];
+                const isActive = ms.index === machineIndex;
+                const rewardSol = getBoxRewardAmount(ms.index);
+                return (
+                  <button
+                    key={ms.index}
+                    type="button"
+                    onClick={() => {
+                      onSelectMachine?.(ms.index);
+                      setIsMachinePickerOpen(false);
+                    }}
+                    className={`p-2.5 rounded-2xl border text-left transition-all cursor-pointer flex items-center gap-2.5 ${
+                      isActive
+                        ? 'bg-emerald-500/20 border-emerald-400 ring-1 ring-emerald-400/50 shadow-md'
+                        : ms.hasStock
+                        ? 'bg-slate-950/85 hover:bg-slate-800/90 border-slate-800 hover:border-slate-600'
+                        : 'bg-slate-950/50 hover:bg-slate-900/70 border-slate-800/70 opacity-65'
+                    }`}
+                  >
+                    {spec?.imgSrc && (
+                      <img
+                        src={spec.imgSrc}
+                        alt={ms.shortName}
+                        className="w-11 h-11 rounded-xl object-cover bg-slate-900 border border-slate-700/80 shrink-0"
+                      />
+                    )}
+                    <div className="min-w-0 flex-1 space-y-0.5">
+                      <div className="flex items-center gap-1">
+                        <span className={`text-xs font-black truncate ${isActive ? 'text-emerald-200' : 'text-white'}`}>
+                          {ms.shortName}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-amber-300 font-mono font-bold">
+                        🪙 {rewardSol} SOL
+                      </div>
+                      <div className="flex items-center gap-1 flex-wrap">
+                        {ms.lockedBy ? (
+                          <span className="px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 text-[9px] font-bold">
+                            🔥 {ms.lockedBy}
+                          </span>
+                        ) : ms.hasStock ? (
+                          <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 text-[9px] font-bold">
+                            ● 플레이 가능
+                          </span>
+                        ) : (
+                          <span className="px-1.5 py-0.5 rounded bg-slate-800 text-rose-400 text-[9px] font-bold">
+                            품절
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

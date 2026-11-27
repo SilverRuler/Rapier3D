@@ -174,6 +174,10 @@ export default function App() {
   const [isStarting, setIsStarting] = useState<boolean>(false);
   const [isFinishing, setIsFinishing] = useState<boolean>(false);
   const [serverClockOffset, setServerClockOffset] = useState<number>(0);
+  const serverClockOffsetRef = useRef<number>(0);
+  serverClockOffsetRef.current = serverClockOffset;
+  const fetchSeqRef = useRef<number>(0);
+  const logsFetchSeqRef = useRef<number>(0);
   const [isRefilling, setIsRefilling] = useState<boolean>(false);
   const [isResetting, setIsResetting] = useState<boolean>(false);
   const [isGranting, setIsGranting] = useState<boolean>(false);
@@ -181,11 +185,11 @@ export default function App() {
   const [statusMessageAt, setStatusMessageAt] = useState<number | null>(null);
   useEffect(() => {
     if (statusMessage) {
-      setStatusMessageAt(Date.now() + serverClockOffset);
+      setStatusMessageAt(Date.now() + serverClockOffsetRef.current);
     } else {
       setStatusMessageAt(null);
     }
-  }, [statusMessage, serverClockOffset]);
+  }, [statusMessage]);
   const [activeWinModal, setActiveWinModal] = useState<GachaWinRecord | null>(null);
   const [activeWinRefundedTickets, setActiveWinRefundedTickets] = useState<number>(0);
 
@@ -260,6 +264,7 @@ export default function App() {
   }, [selectedMember, selectedMachineIndex, activeTurnId]);
 
   const fetchState = useCallback(async () => {
+    const reqSeq = ++fetchSeqRef.current;
     try {
       const meta = presenceMetaRef.current;
       const qs = new URLSearchParams({
@@ -271,6 +276,7 @@ export default function App() {
       });
       const resp = await fetch(`/api/gacha/state?${qs.toString()}`, { cache: 'no-store' });
       const data = await resp.json();
+      if (reqSeq !== fetchSeqRef.current) return;
       if (data.success) {
         if (typeof data.serverNow === 'number') {
           setServerClockOffset(data.serverNow - Date.now());
@@ -314,12 +320,14 @@ export default function App() {
   }, []);
 
   const fetchRecentLogsPage = useCallback(async (page: number) => {
+    const reqSeq = ++logsFetchSeqRef.current;
     setIsLoadingRecentLogs(true);
     try {
       const resp = await fetch(`/api/gacha/logs?page=${page}&limit=10&_t=${Date.now()}`, {
         cache: 'no-store',
       });
       const data = await resp.json();
+      if (reqSeq !== logsFetchSeqRef.current) return;
       if (data.success && Array.isArray(data.logs)) {
         setPagedRecentLogs(data.logs);
         if (typeof data.totalCount === 'number') {
@@ -329,7 +337,9 @@ export default function App() {
     } catch (e) {
       console.warn('Failed to fetch gacha logs page:', e);
     } finally {
-      setIsLoadingRecentLogs(false);
+      if (reqSeq === logsFetchSeqRef.current) {
+        setIsLoadingRecentLogs(false);
+      }
     }
   }, []);
 
@@ -1309,10 +1319,10 @@ export default function App() {
             (!latestServerLog || (statusMessageAt || 0) >= (latestServerLog.createdAt || 0));
           const collapsedMessage = useLocalStatus
             ? statusMessage
-            : latestServerLog?.message || machine?.lastActionSummary || '';
+            : latestServerLog?.message || '';
           const collapsedTs = useLocalStatus
             ? statusMessageAt
-            : latestServerLog?.createdAt || machine?.updatedAt || machine?.lastPlayedAt || null;
+            : latestServerLog?.createdAt || null;
 
           if (!collapsedMessage && recentLogs.length === 0) return null;
 
@@ -1342,17 +1352,12 @@ export default function App() {
           return (
             <div className="rounded-xl bg-slate-900/90 border border-slate-800 text-xs text-slate-300 overflow-hidden">
               {!isRecentLogsExpanded ? (
-                <div className="px-4 py-2.5 flex items-center justify-between gap-2 flex-wrap">
-                  <span className="min-w-0 flex-1">
-                    📢 <strong className="text-cyan-300">최근 상황:</strong>{' '}
-                    {collapsedMessage}
-                  </span>
-                  <div className="flex items-center gap-2 shrink-0 ml-auto">
-                    {machine?.resetCount ? (
-                      <span className="text-[10px] text-slate-500 font-mono">
-                        재정렬 누적 {machine.resetCount}회
-                      </span>
-                    ) : null}
+                <div className="px-3 sm:px-4 py-2.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5 sm:gap-3">
+                  <div className="min-w-0 w-full sm:flex-1 leading-relaxed break-words">
+                    📢 <strong className="text-cyan-300 whitespace-nowrap">최근 상황:</strong>{' '}
+                    <span>{collapsedMessage}</span>
+                  </div>
+                  <div className="flex items-center justify-end gap-2 shrink-0">
                     {collapsedTimeText ? (
                       <span className="text-[10px] text-slate-400 font-mono whitespace-nowrap">
                         {collapsedTimeText}
@@ -1365,7 +1370,7 @@ export default function App() {
                           setIsRecentLogsExpanded(true);
                           setRecentLogsPage(1);
                         }}
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-cyan-300 hover:text-cyan-200 text-[10px] font-bold cursor-pointer transition-colors"
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-cyan-300 hover:text-cyan-200 text-[10px] font-bold cursor-pointer transition-colors whitespace-nowrap"
                       >
                         <span>펼치기 ({effectiveTotalLogs})</span>
                         <ChevronDown className="w-3 h-3" />
@@ -1374,18 +1379,13 @@ export default function App() {
                   </div>
                 </div>
               ) : (
-                <div className="p-3.5 space-y-2.5">
+                <div className="p-3 sm:p-3.5 space-y-2.5">
                   <div className="flex items-center justify-between gap-2 flex-wrap">
                     <div className="flex items-center gap-2">
                       <span className="font-black text-cyan-300">📢 최근 상황 로그</span>
                       <span className="px-2 py-0.5 rounded-full bg-cyan-500/15 border border-cyan-500/30 text-cyan-200 text-[10px] font-mono font-bold">
                         총 {effectiveTotalLogs}건
                       </span>
-                      {machine?.resetCount ? (
-                        <span className="text-[10px] text-slate-500 font-mono">
-                          재정렬 누적 {machine.resetCount}회
-                        </span>
-                      ) : null}
                     </div>
                     <button
                       type="button"
@@ -1414,13 +1414,13 @@ export default function App() {
                         return (
                           <div
                             key={log.id || `${safeLogPage}-${idx}`}
-                            className="px-3 py-2 flex items-center justify-between gap-3"
+                            className="px-3 py-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-3"
                           >
-                            <span className="min-w-0 text-slate-200 leading-snug break-words">
+                            <span className="min-w-0 w-full sm:flex-1 text-slate-200 leading-snug break-words">
                               {log.message}
                             </span>
                             {rowTime ? (
-                              <span className="text-[10px] text-slate-400 font-mono whitespace-nowrap shrink-0">
+                              <span className="text-[10px] text-slate-400 font-mono whitespace-nowrap shrink-0 self-end sm:self-center">
                                 {rowTime}
                               </span>
                             ) : null}

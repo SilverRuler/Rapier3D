@@ -54,12 +54,12 @@ export interface PhysicsTuning {
 }
 
 export const DEFAULT_PHYSICS_TUNING: PhysicsTuning = {
-  closeTorque: 7.0,
-  liftTorque: 7.0,
+  closeTorque: 3.0,
+  liftTorque: 3.0,
   descendFlexTorque: 4.2,
   downPressForce: 15,
   barRingFriction: 1.19,
-  clawTipFriction: 0.96,
+  clawTipFriction: 0.62,
   massScale: 1.5,
   useComOffset: true,
   timeScale: 1.0,
