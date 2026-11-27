@@ -2506,7 +2506,7 @@ export default function App() {
                       <p className="flex items-start gap-2">
                         <Gift className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                         <span>
-                          <strong className="text-amber-300">리워드 밸런스 재조정:</strong> 3D 인형 뽑기는 <strong className="text-white">0.004 ~ 0.008 SOL</strong>, 일반 피규어 박스 뽑기는 <strong className="text-white">0.003 ~ 0.010 SOL</strong> 범위에서 난이도별 재조정되었습니다.
+                          <strong className="text-amber-300">리워드 밸런스 재조정:</strong> 3D 인형 뽑기는 일괄 <strong className="text-white">0.001 SOL</strong>, 일반 피규어 박스 뽑기는 <strong className="text-white">0.003 ~ 0.010 SOL</strong> 범위에서 난이도별 적용됩니다.
                         </span>
                       </p>
                       <p className="flex items-start gap-2">
