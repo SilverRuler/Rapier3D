@@ -1656,7 +1656,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
                   });
                 }
 
-                const plushMass = totalMass * 0.72;
+                const plushMass = Math.max(0.28, totalMass * 0.32);
                 const parts =
                   spec.plushParts && spec.plushParts.length > 0
                     ? spec.plushParts
@@ -1704,7 +1704,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
 
               if (liveTuning.useComOffset) {
                 const comScale = plushItem ? PLUSH_MOUND_SCALE : 1;
-                const ballastMass = plushItem ? totalMass * 0.72 * 0.15 : totalMass * 0.18;
+                const ballastMass = plushItem ? Math.max(0.28, totalMass * 0.32) * 0.15 : totalMass * 0.18;
                 world.createCollider(
                   Rapier.ColliderDesc.ball(0.05 * comScale)
                     .setTranslation(
