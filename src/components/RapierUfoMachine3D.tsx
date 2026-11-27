@@ -2270,9 +2270,10 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
             if (reachedTop) {
               if (isPlushMachine && !sim.liftTopBumpApplied) {
                 sim.liftTopBumpApplied = true;
-                const jx = (Math.random() - 0.5) * 0.9;
-                const jz = (Math.random() - 0.5) * 0.9;
-                headBody.applyImpulse({ x: jx, y: -1.85, z: jz }, true);
+                const bumpScale = sim.plushStrongGripTurn ? 0.5 : 1.0;
+                const jx = (Math.random() - 0.5) * 3.2 * bumpScale;
+                const jz = (Math.random() - 0.5) * 3.2 * bumpScale;
+                headBody.applyImpulse({ x: jx, y: -3.2 * bumpScale, z: jz }, true);
                 playTone(260, 0.05, 'triangle', 0.05);
               }
               sim.liftTopHoldTimer += dt;
@@ -2304,22 +2305,22 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           } else if (curPhase === 'carrying') {
             // 3D 인형뽑기 전용: (1) 이동거리 비례 토크 감쇠 + (2) X→Z 직각 2단 운반/진동 + (3) 집게 미세 이완 + (4) 22% 강력 그립 편차
             sim.phaseTimer += dt;
-            const dRatio = Math.min(1, sim.carryTraveled / 2.2);
+            const dRatio = Math.min(1, sim.carryTraveled / 1.55);
             const baseLift = tuningRef.current.liftTorque;
             const carryTorque = sim.plushStrongGripTurn
-              ? baseLift * (0.96 - 0.28 * dRatio)
-              : baseLift * (0.86 - 0.64 * dRatio);
+              ? baseLift * (0.94 - 0.36 * dRatio)
+              : baseLift * (0.62 - 0.56 * dRatio);
             const relaxedTargetAng = sim.plushStrongGripTurn
-              ? -0.02 + dRatio * 0.03
-              : -0.02 + dRatio * 0.16;
+              ? -0.02 + dRatio * 0.04
+              : -0.02 + dRatio * 0.34;
 
             const isMovingStage = sim.carryAxisStage === 'x' || sim.carryAxisStage === 'z';
             const railRipple = isMovingStage
-              ? Math.sin(sim.phaseTimer * 24) * (sim.plushStrongGripTurn ? 0.006 : 0.018)
+              ? Math.sin(sim.phaseTimer * 26) * (sim.plushStrongGripTurn ? 0.008 : 0.032)
               : 0;
             sim.targetHeadY = effectiveLiftY + railRipple;
             winchJoint.setMotorMaxForce(220);
-            setArmTorques(Math.max(0.8, carryTorque));
+            setArmTorques(Math.max(0.22, carryTorque));
             setArmTargets(relaxedTargetAng);
 
             const carrySpeed = 1.24;
@@ -2333,7 +2334,11 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
                 sim.gantryX = homeX;
                 sim.carryAxisPauseTimer = 0;
                 if (Math.abs(homeZ - sim.gantryZ) > 0.03) {
-                  headBody.applyImpulse({ x: -Math.sign(dx || 1) * 0.65, y: -0.55, z: 0 }, true);
+                  const jScale = sim.plushStrongGripTurn ? 0.45 : 1.0;
+                  headBody.applyImpulse(
+                    { x: -Math.sign(dx || 1) * 1.45 * jScale, y: -1.35 * jScale, z: 0 },
+                    true
+                  );
                   sim.carryAxisStage = 'pause';
                 } else {
                   sim.carryAxisStage = 'done';
