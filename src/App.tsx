@@ -2488,7 +2488,7 @@ export default function App() {
                       <p className="flex items-start gap-2">
                         <Sparkles className="w-4 h-4 text-pink-400 shrink-0 mt-0.5" />
                         <span>
-                          <strong className="text-pink-300">3D 인형 5종 클래식 인형뽑기 전면 전환!</strong> (<strong className="text-white">#2 마린 · #5 타야마 · #8 미쿠 · #11 산드로네 · #13 마키마</strong>) — 기존 하시와타시 Bar 대신 <strong className="text-amber-300">볼륨감 있게 키운 경량 3D 인형 25개를 바닥부터 ㄱ자 외벽 안쪽에 산처럼 쌓아두고</strong>, <strong className="text-sky-300">상·하·좌·우 4방향 자유 이동 + [뽑기] 버튼</strong>과 <strong className="text-cyan-300">타원형 메탈 헤드 + 얇은 스틸 4방향 집게(5 N·m)</strong>로 집어 올려 <strong className="text-emerald-300">좌측 하단(초기 위치) WIN 구멍 위로 운반·낙하</strong>시키면 당첨됩니다! (재고 25개 소진 시 품절)
+                          <strong className="text-pink-300">3D 인형 5종 클래식 인형뽑기 전면 전환!</strong> (<strong className="text-white">#2 마린 · #5 타야마 · #8 미쿠 · #11 산드로네 · #13 마키마</strong>) — 기존 하시와타시 Bar 대신 <strong className="text-amber-300">볼륨감 있게 키운 경량 3D 인형 20개를 바닥에 자연스럽게 흩뿌려 두고</strong>, <strong className="text-sky-300">상·하·좌·우 4방향 자유 이동 + [뽑기] 버튼</strong>과 <strong className="text-cyan-300">타원형 메탈 헤드 + 얇은 스틸 4방향 집게(5 N·m)</strong>로 집어 올려 <strong className="text-emerald-300">좌측 하단(초기 위치) WIN 구멍 위로 운반·낙하</strong>시키면 당첨됩니다! (재고 20개 소진 시 품절)
                         </span>
                       </p>
                       <p className="flex items-start gap-2">
