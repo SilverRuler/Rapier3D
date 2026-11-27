@@ -3,7 +3,9 @@ import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
 import {
   ArrowRight,
+  ArrowLeft,
   ArrowUp,
+  ArrowDown,
   Volume2,
   VolumeX,
   Sparkles,
@@ -49,6 +51,7 @@ type CameraView = 'front' | 'top' | 'right';
 
 export type CranePhase =
   | 'idle'
+  | 'free_move'
   | 'ready_right'
   | 'moving_right'
   | 'ready_up'
@@ -147,6 +150,7 @@ interface GachaLiveFrame {
 }
 
 const LIVE_PHASE_LABELS: Record<string, string> = {
+  free_move: '4방향 위치 조준 중',
   ready_right: '우(→) 이동 대기',
   moving_right: '우(→) 이동 중',
   ready_up: '위(↑) 이동 대기',
@@ -668,6 +672,39 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
     triggerFinishWin,
   ]);
 
+  const freeMoveKeysRef = useRef<{ up: boolean; down: boolean; left: boolean; right: boolean }>({
+    up: false,
+    down: false,
+    left: false,
+    right: false,
+  });
+  const [freeDirState, setFreeDirState] = useState<{
+    up: boolean;
+    down: boolean;
+    left: boolean;
+    right: boolean;
+  }>({ up: false, down: false, left: false, right: false });
+
+  const clearFreeMove = useCallback(() => {
+    freeMoveKeysRef.current = { up: false, down: false, left: false, right: false };
+    setFreeDirState((prev) =>
+      prev.up || prev.down || prev.left || prev.right
+        ? { up: false, down: false, left: false, right: false }
+        : prev
+    );
+  }, []);
+
+  const setFreeDir = useCallback((dir: 'up' | 'down' | 'left' | 'right', active: boolean) => {
+    if (active && phaseRef.current !== 'free_move') return;
+    if (active && cameraViewRef.current !== 'front') {
+      setCameraView('front');
+      cameraViewRef.current = 'front';
+    }
+    if (freeMoveKeysRef.current[dir] === active) return;
+    freeMoveKeysRef.current[dir] = active;
+    setFreeDirState((prev) => (prev[dir] === active ? prev : { ...prev, [dir]: active }));
+  }, []);
+
   const simControlRef = useRef<{
     syncFromItems: (nextItems: GachaBoxItem[]) => void;
     resetClawToHome: () => void;
@@ -678,21 +715,29 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
     updateRedBarSpacing: (halfZ: number) => void;
   } | null>(null);
 
+  const handlePlushGrab = useCallback(() => {
+    if (phaseRef.current !== 'free_move') return;
+    clearFreeMove();
+    simControlRef.current?.startDescending();
+  }, [clearFreeMove]);
+
   useEffect(() => {
     if (isMyTurn && turnKey && engineReady) {
       setCameraView('front');
       cameraViewRef.current = 'front';
       setDroppedThisTurn(0);
+      clearFreeMove();
       const curItems = itemsRef.current;
       const isInitialPoseOnly =
         curItems.length > 0 && curItems.every((it) => isBoxAtInitialPose(it));
       simControlRef.current?.prepareTurnStart(curItems);
-      setCranePhase('ready_right');
+      setCranePhase(isPlushSlot(machineIndex) ? 'free_move' : 'ready_right');
       triggerStartPopup(isInitialPoseOnly || isPlushSlot(machineIndex));
     } else if (!isMyTurn && phaseRef.current !== 'idle') {
+      clearFreeMove();
       setCranePhase('idle');
     }
-  }, [isMyTurn, turnKey, engineReady, setCranePhase, triggerStartPopup]);
+  }, [isMyTurn, turnKey, engineReady, machineIndex, clearFreeMove, setCranePhase, triggerStartPopup]);
 
   useEffect(() => {
     if (engineReady && !isMyTurn && !isFinishing && phaseRef.current === 'idle') {
@@ -1800,11 +1845,19 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
         };
 
         const startDescending = () => {
+          clearFreeMove();
           sim.phaseTimer = 0;
           sim.descendStallTimer = 0;
           sim.lastHeadYForStall = headBody.translation().y;
           for (const ent of prizeEntities.values()) {
-            ent.body.wakeUp();
+            if (isPlushMachine) {
+              const p = ent.body.translation();
+              if (Math.hypot(p.x - sim.gantryX, p.z - sim.gantryZ) <= 0.95) {
+                ent.body.wakeUp();
+              }
+            } else {
+              ent.body.wakeUp();
+            }
           }
           setArmTorques(tuningRef.current.descendFlexTorque);
           setArmTargets(CLAW_OPEN_ANGLE);
@@ -1986,6 +2039,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
             cableMesh.quaternion.copy(tmpThreeQuat);
 
             const specShowAim =
+              sf.phase === 'free_move' ||
               sf.phase === 'ready_right' ||
               sf.phase === 'moving_right' ||
               sf.phase === 'ready_up' ||
@@ -1993,10 +2047,13 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
             aimRing.visible = specShowAim;
             aimBeam.visible = specShowAim;
             if (specShowAim) {
-              aimRing.position.set(ufoHeadGroup.position.x, GACHA_PHYSICS.BAR_Y + 0.12, ufoHeadGroup.position.z);
-              const beamH = Math.max(0.2, ufoHeadGroup.position.y - (GACHA_PHYSICS.BAR_Y + 0.12));
+              const aimBaseYSpec = isPlushMachine
+                ? PLUSH_FLOOR_Y + PLUSH_CHUTE_WALL_HEIGHT
+                : GACHA_PHYSICS.BAR_Y + 0.12;
+              aimRing.position.set(ufoHeadGroup.position.x, aimBaseYSpec, ufoHeadGroup.position.z);
+              const beamH = Math.max(0.2, ufoHeadGroup.position.y - aimBaseYSpec);
               aimBeam.scale.y = beamH / 1.7;
-              aimBeam.position.set(ufoHeadGroup.position.x, GACHA_PHYSICS.BAR_Y + 0.12 + beamH / 2, ufoHeadGroup.position.z);
+              aimBeam.position.set(ufoHeadGroup.position.x, aimBaseYSpec + beamH / 2, ufoHeadGroup.position.z);
             }
 
             for (const it of sf.items) {
@@ -2025,7 +2082,23 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
 
           const curPhase = phaseRef.current;
 
-          if (curPhase === 'moving_right') {
+          if (curPhase === 'free_move') {
+            const { up, down, left, right } = freeMoveKeysRef.current;
+            const dx = (right ? 1 : 0) - (left ? 1 : 0);
+            const dz = (down ? 1 : 0) - (up ? 1 : 0);
+            if (dx !== 0) {
+              sim.gantryX = Math.max(
+                GACHA_PHYSICS.CLAW_MIN_X,
+                Math.min(GACHA_PHYSICS.CLAW_MAX_X, sim.gantryX + dx * GACHA_PHYSICS.MOVE_SPEED_X * dt)
+              );
+            }
+            if (dz !== 0) {
+              sim.gantryZ = Math.max(
+                GACHA_PHYSICS.CLAW_MIN_Z,
+                Math.min(GACHA_PHYSICS.CLAW_MAX_Z, sim.gantryZ + dz * GACHA_PHYSICS.MOVE_SPEED_Z * dt)
+              );
+            }
+          } else if (curPhase === 'moving_right') {
             sim.gantryX = Math.min(GACHA_PHYSICS.CLAW_MAX_X, sim.gantryX + GACHA_PHYSICS.MOVE_SPEED_X * dt);
             if (sim.gantryX >= GACHA_PHYSICS.CLAW_MAX_X) {
               setCranePhase('ready_up');
@@ -2241,6 +2314,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
             winchJoint.configureMotorPosition(sim.targetHeadY - homeY, 320, 48);
 
             const isAimingPhase =
+              curPhase === 'free_move' ||
               curPhase === 'ready_right' ||
               curPhase === 'moving_right' ||
               curPhase === 'ready_up' ||
@@ -2348,6 +2422,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           cableMesh.quaternion.copy(tmpThreeQuat);
 
           const showAim =
+            curPhase === 'free_move' ||
             curPhase === 'ready_right' ||
             curPhase === 'moving_right' ||
             curPhase === 'ready_up' ||
@@ -2569,7 +2644,12 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
       if (
         !isTyping &&
         (isMyTurnKeyLockRef.current || isFocusedModeRef.current) &&
-        (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === ' ')
+        (e.key === 'ArrowUp' ||
+          e.key === 'ArrowDown' ||
+          e.key === 'ArrowLeft' ||
+          e.key === 'ArrowRight' ||
+          e.key === ' ' ||
+          (e.key === 'Enter' && phaseRef.current === 'free_move'))
       ) {
         e.preventDefault();
       }
@@ -2581,6 +2661,37 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
       }
 
       if (e.repeat || isTyping) return;
+      if (phaseRef.current === 'free_move') {
+        if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
+          e.preventDefault();
+          setFreeDir('up', true);
+          playTone(420, 0.04);
+          return;
+        }
+        if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') {
+          e.preventDefault();
+          setFreeDir('down', true);
+          playTone(380, 0.04);
+          return;
+        }
+        if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
+          e.preventDefault();
+          setFreeDir('left', true);
+          playTone(340, 0.04);
+          return;
+        }
+        if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
+          e.preventDefault();
+          setFreeDir('right', true);
+          playTone(360, 0.04);
+          return;
+        }
+        if (e.key === ' ' || e.key === 'Enter') {
+          e.preventDefault();
+          handlePlushGrab();
+          return;
+        }
+      }
       if ((e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') && phaseRef.current === 'ready_right') {
         e.preventDefault();
         if (cameraViewRef.current !== 'front') {
@@ -2603,6 +2714,15 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
     };
 
     const onKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
+        setFreeDir('up', false);
+      } else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') {
+        setFreeDir('down', false);
+      } else if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
+        setFreeDir('left', false);
+      } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
+        setFreeDir('right', false);
+      }
       if ((e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') && phaseRef.current === 'moving_right') {
         e.preventDefault();
         setCranePhase('ready_up');
@@ -2615,11 +2735,13 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
 
     window.addEventListener('keydown', onKeyDown, { passive: false });
     window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', clearFreeMove);
     return () => {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', clearFreeMove);
     };
-  }, [playTone, setCranePhase]);
+  }, [playTone, setCranePhase, setFreeDir, clearFreeMove, handlePlushGrab]);
 
   const phaseBannerText = (() => {
     if (engineError) return `❌ Rapier3D 초기화 오류: ${engineError}`;
@@ -2628,6 +2750,8 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
     switch (phase) {
       case 'idle':
         return '하단 [뽑기 시작]을 눌러 Rapier3D UFO 브릿지 크레인을 조작하세요!';
+      case 'free_move':
+        return '🕹️ 상하좌우(↑↓←→)로 원하는 인형 위를 조준한 뒤 [뽑기] 버튼(또는 Space)을 누르세요!';
       case 'ready_right':
         return '1단계: [➡ 우측 이동] 버튼을 꾹 눌렀다가 원하는 X 위치에서 떼세요!';
       case 'moving_right':
@@ -2639,7 +2763,9 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
       case 'descending':
         return '⬇ Prismatic 윈치 크레인이 하강하고 있습니다...';
       case 'closing':
-        return '🤏 실제 Revolute 모터 집게로 상자를 잡는 중...';
+        return isPlushSlot(machineIndex)
+          ? '🤏 4방향 스틸 집게로 인형을 집는 중...'
+          : '🤏 실제 Revolute 모터 집게로 상자를 잡는 중...';
       case 'lifting':
         return isPlushSlot(machineIndex)
           ? '⬆ 인형을 집어 들어올리는 중...'
@@ -3174,6 +3300,138 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
                 <ChevronRight className="w-4 h-4" />
               </button>
             </div>
+          </div>
+        ) : isPlushSlot(machineIndex) ? (
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 max-w-xl mx-auto">
+            <div className="grid grid-cols-3 gap-1.5 w-[198px] shrink-0 select-none">
+              <div />
+              <button
+                type="button"
+                aria-label="위(안쪽) 이동"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  setFreeDir('up', true);
+                  playTone(420, 0.04);
+                }}
+                onPointerUp={() => setFreeDir('up', false)}
+                onPointerLeave={() => setFreeDir('up', false)}
+                onPointerCancel={() => setFreeDir('up', false)}
+                onContextMenu={(e) => e.preventDefault()}
+                disabled={phase !== 'free_move'}
+                style={{ touchAction: 'none' }}
+                className={`h-14 rounded-2xl border-2 font-black flex flex-col items-center justify-center gap-0.5 transition-all select-none ${
+                  freeDirState.up
+                    ? 'bg-emerald-400 text-slate-950 border-white scale-95 shadow-lg shadow-emerald-500/40'
+                    : phase === 'free_move'
+                    ? 'bg-slate-800 hover:bg-slate-700 text-emerald-200 border-emerald-400/60 shadow cursor-pointer'
+                    : 'bg-slate-900 text-slate-600 border-slate-800 cursor-not-allowed'
+                }`}
+              >
+                <ArrowUp className="w-5 h-5 stroke-[3]" />
+                <span className="text-[10px] leading-none">상</span>
+              </button>
+              <div />
+
+              <button
+                type="button"
+                aria-label="좌측 이동"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  setFreeDir('left', true);
+                  playTone(340, 0.04);
+                }}
+                onPointerUp={() => setFreeDir('left', false)}
+                onPointerLeave={() => setFreeDir('left', false)}
+                onPointerCancel={() => setFreeDir('left', false)}
+                onContextMenu={(e) => e.preventDefault()}
+                disabled={phase !== 'free_move'}
+                style={{ touchAction: 'none' }}
+                className={`h-14 rounded-2xl border-2 font-black flex flex-col items-center justify-center gap-0.5 transition-all select-none ${
+                  freeDirState.left
+                    ? 'bg-emerald-400 text-slate-950 border-white scale-95 shadow-lg shadow-emerald-500/40'
+                    : phase === 'free_move'
+                    ? 'bg-slate-800 hover:bg-slate-700 text-emerald-200 border-emerald-400/60 shadow cursor-pointer'
+                    : 'bg-slate-900 text-slate-600 border-slate-800 cursor-not-allowed'
+                }`}
+              >
+                <ArrowLeft className="w-5 h-5 stroke-[3]" />
+                <span className="text-[10px] leading-none">좌</span>
+              </button>
+              <div className="h-14 rounded-2xl bg-slate-900/90 border border-slate-800 flex items-center justify-center text-[10px] font-black text-slate-400">
+                4방향
+              </div>
+              <button
+                type="button"
+                aria-label="우측 이동"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  setFreeDir('right', true);
+                  playTone(360, 0.04);
+                }}
+                onPointerUp={() => setFreeDir('right', false)}
+                onPointerLeave={() => setFreeDir('right', false)}
+                onPointerCancel={() => setFreeDir('right', false)}
+                onContextMenu={(e) => e.preventDefault()}
+                disabled={phase !== 'free_move'}
+                style={{ touchAction: 'none' }}
+                className={`h-14 rounded-2xl border-2 font-black flex flex-col items-center justify-center gap-0.5 transition-all select-none ${
+                  freeDirState.right
+                    ? 'bg-emerald-400 text-slate-950 border-white scale-95 shadow-lg shadow-emerald-500/40'
+                    : phase === 'free_move'
+                    ? 'bg-slate-800 hover:bg-slate-700 text-emerald-200 border-emerald-400/60 shadow cursor-pointer'
+                    : 'bg-slate-900 text-slate-600 border-slate-800 cursor-not-allowed'
+                }`}
+              >
+                <ArrowRight className="w-5 h-5 stroke-[3]" />
+                <span className="text-[10px] leading-none">우</span>
+              </button>
+
+              <div />
+              <button
+                type="button"
+                aria-label="아래(앞쪽) 이동"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  setFreeDir('down', true);
+                  playTone(380, 0.04);
+                }}
+                onPointerUp={() => setFreeDir('down', false)}
+                onPointerLeave={() => setFreeDir('down', false)}
+                onPointerCancel={() => setFreeDir('down', false)}
+                onContextMenu={(e) => e.preventDefault()}
+                disabled={phase !== 'free_move'}
+                style={{ touchAction: 'none' }}
+                className={`h-14 rounded-2xl border-2 font-black flex flex-col items-center justify-center gap-0.5 transition-all select-none ${
+                  freeDirState.down
+                    ? 'bg-emerald-400 text-slate-950 border-white scale-95 shadow-lg shadow-emerald-500/40'
+                    : phase === 'free_move'
+                    ? 'bg-slate-800 hover:bg-slate-700 text-emerald-200 border-emerald-400/60 shadow cursor-pointer'
+                    : 'bg-slate-900 text-slate-600 border-slate-800 cursor-not-allowed'
+                }`}
+              >
+                <ArrowDown className="w-5 h-5 stroke-[3]" />
+                <span className="text-[10px] leading-none">하</span>
+              </button>
+              <div />
+            </div>
+
+            <button
+              type="button"
+              data-testid="plush-grab-btn"
+              onClick={handlePlushGrab}
+              disabled={phase !== 'free_move'}
+              className={`w-full sm:w-52 py-6 px-5 rounded-3xl font-black text-base sm:text-lg flex flex-col items-center justify-center gap-1.5 border-2 select-none transition-all ${
+                phase === 'free_move'
+                  ? 'bg-gradient-to-b from-amber-400 via-orange-500 to-rose-500 text-slate-950 border-yellow-200 shadow-xl shadow-orange-500/35 hover:brightness-110 active:scale-95 cursor-pointer animate-pulse'
+                  : 'bg-slate-900 text-slate-500 border-slate-800 cursor-not-allowed'
+              }`}
+            >
+              <span className="text-2xl leading-none">🕹️</span>
+              <span>뽑기</span>
+              <span className="text-[11px] font-bold opacity-85">
+                {phase === 'free_move' ? '하강·집기 실행 (Space)' : '크레인 작동 중...'}
+              </span>
+            </button>
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-3 max-w-lg mx-auto">
