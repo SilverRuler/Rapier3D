@@ -2262,7 +2262,7 @@ export default function App() {
                       <p className="flex items-start gap-2">
                         <Sparkles className="w-4 h-4 text-pink-400 shrink-0 mt-0.5" />
                         <span>
-                          <strong className="text-pink-300">3D 인형 5종 클래식 인형뽑기 전면 전환!</strong> (<strong className="text-white">#2 마린 · #5 타야마 · #8 미쿠 · #11 산드로네 · #13 마키마</strong>) — 기존 하시와타시 Bar 대신 <strong className="text-amber-300">같은 3D 인형 16개를 바닥 가득 산처럼 쌓아두고</strong>, 크레인으로 집어 올려 <strong className="text-emerald-300">좌측 하단(초기 위치) WIN 구멍 위로 운반·낙하</strong>시키면 당첨됩니다! (재고 16개 소진 시 품절)
+                          <strong className="text-pink-300">3D 인형 5종 클래식 인형뽑기 전면 전환!</strong> (<strong className="text-white">#2 마린 · #5 타야마 · #8 미쿠 · #11 산드로네 · #13 마키마</strong>) — 기존 하시와타시 Bar 대신 <strong className="text-amber-300">같은 3D 인형 36개를 바닥부터 높은 ㄱ자 외벽(1.55m)까지 꽉 채워 산처럼 쌓아두고</strong>, <strong className="text-cyan-300">4방향 집게(잡는힘/유지힘 10 N·m)</strong>로 집어 올려 <strong className="text-emerald-300">좌측 하단(초기 위치) WIN 구멍 위로 운반·낙하</strong>시키면 당첨됩니다! (재고 36개 소진 시 품절)
                         </span>
                       </p>
                       <p className="flex items-start gap-2">

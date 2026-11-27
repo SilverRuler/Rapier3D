@@ -99,30 +99,30 @@ export interface MachineProfile {
 export const MACHINE_PROFILES: readonly MachineProfile[] = [
   // #1 페른 (난이도 5.5 · 기준 기본값)
   { redBarHalfZ: 0.455, outerBarHalfZ: 1.02, outerBarY: 1.06, headScale: 1.00, armLengthScale: 1.00, armSizeScale: 1.00, closeTorque: 3.0, liftTorque: 3.0, clawTipFriction: 0.62 },
-  // #2 마린 3D 인형 (난이도 7 · 클래식 산더미 인형뽑기 · 집게힘/팁강도 +30%)
-  { redBarHalfZ: 0.455, outerBarHalfZ: 1.02, outerBarY: 1.06, headScale: 1.08, armLengthScale: 1.04, armSizeScale: 1.05, closeTorque: 5.7, liftTorque: 5.1, clawTipFriction: 0.96 },
+  // #2 마린 3D 인형 (난이도 7 · 4방향 집게 클래식 산더미 · 잡는힘/유지힘 10Nm)
+  { redBarHalfZ: 0.455, outerBarHalfZ: 1.02, outerBarY: 1.06, headScale: 1.08, armLengthScale: 1.04, armSizeScale: 1.05, closeTorque: 10.0, liftTorque: 10.0, clawTipFriction: 0.96 },
   // #3 렘 (난이도 7.5 · 타이트한 틈새 + 롱암 + 흐물 리프트)
   { redBarHalfZ: 0.420, outerBarHalfZ: 0.96, outerBarY: 1.04, headScale: 1.08, armLengthScale: 1.08, armSizeScale: 0.92, closeTorque: 2.8, liftTorque: 2.6, clawTipFriction: 0.55 },
   // #4 프리렌 (난이도 5 · 입문용 여유 틈새 + 안정 토크)
   { redBarHalfZ: 0.460, outerBarHalfZ: 1.05, outerBarY: 1.08, headScale: 0.96, armLengthScale: 0.96, armSizeScale: 1.04, closeTorque: 3.6, liftTorque: 3.5, clawTipFriction: 0.72 },
-  // #5 타야마 3D 인형 (난이도 8 · 클래식 산더미 인형뽑기 고난도 · 집게힘/팁강도 +30%)
-  { redBarHalfZ: 0.455, outerBarHalfZ: 1.02, outerBarY: 1.06, headScale: 0.96, armLengthScale: 0.96, armSizeScale: 0.92, closeTorque: 5.1, liftTorque: 4.3, clawTipFriction: 0.85 },
+  // #5 타야마 3D 인형 (난이도 8 · 4방향 집게 클래식 산더미 · 잡는힘/유지힘 10Nm)
+  { redBarHalfZ: 0.455, outerBarHalfZ: 1.02, outerBarY: 1.06, headScale: 0.96, armLengthScale: 0.96, armSizeScale: 0.92, closeTorque: 10.0, liftTorque: 10.0, clawTipFriction: 0.85 },
   // #6 바니카 (난이도 6.5 · 정사각 와이드 전용 대형 헤드·넓은 바)
   { redBarHalfZ: 0.485, outerBarHalfZ: 1.08, outerBarY: 1.09, headScale: 1.10, armLengthScale: 1.06, armSizeScale: 1.06, closeTorque: 3.4, liftTorque: 3.0, clawTipFriction: 0.64 },
   // #7 루시 (난이도 7 · 좁은 바 + 얇은 정밀 집게)
   { redBarHalfZ: 0.425, outerBarHalfZ: 0.98, outerBarY: 1.05, headScale: 1.06, armLengthScale: 1.05, armSizeScale: 0.94, closeTorque: 2.9, liftTorque: 2.7, clawTipFriction: 0.58 },
-  // #8 미쿠 3D 인형 (난이도 7.5 · 클래식 산더미 인형뽑기 · 집게힘/팁강도 +30%)
-  { redBarHalfZ: 0.455, outerBarHalfZ: 1.02, outerBarY: 1.06, headScale: 1.06, armLengthScale: 1.02, armSizeScale: 0.98, closeTorque: 5.5, liftTorque: 4.7, clawTipFriction: 0.91 },
+  // #8 미쿠 3D 인형 (난이도 7.5 · 4방향 집게 클래식 산더미 · 잡는힘/유지힘 10Nm)
+  { redBarHalfZ: 0.455, outerBarHalfZ: 1.02, outerBarY: 1.06, headScale: 1.06, armLengthScale: 1.02, armSizeScale: 0.98, closeTorque: 10.0, liftTorque: 10.0, clawTipFriction: 0.91 },
   // #9 네즈코 (난이도 6 · 중상급 좁은 바 + 약간 긴 집게)
   { redBarHalfZ: 0.435, outerBarHalfZ: 1.00, outerBarY: 1.05, headScale: 1.04, armLengthScale: 1.03, armSizeScale: 0.98, closeTorque: 3.1, liftTorque: 2.9, clawTipFriction: 0.60 },
   // #10 레제 (난이도 8 · 마스터 초타이트 바 + 대형 롱암 + 약한 리프트)
   { redBarHalfZ: 0.415, outerBarHalfZ: 0.95, outerBarY: 1.03, headScale: 1.12, armLengthScale: 1.12, armSizeScale: 0.90, closeTorque: 2.7, liftTorque: 2.5, clawTipFriction: 0.52 },
-  // #11 산드로네 3D 인형 (난이도 6.5 · 클래식 산더미 인형뽑기 입문 · 집게힘/팁강도 +30%)
-  { redBarHalfZ: 0.455, outerBarHalfZ: 1.02, outerBarY: 1.06, headScale: 1.02, armLengthScale: 0.98, armSizeScale: 1.04, closeTorque: 6.0, liftTorque: 5.5, clawTipFriction: 1.01 },
+  // #11 산드로네 3D 인형 (난이도 6.5 · 4방향 집게 클래식 산더미 · 잡는힘/유지힘 10Nm)
+  { redBarHalfZ: 0.455, outerBarHalfZ: 1.02, outerBarY: 1.06, headScale: 1.02, armLengthScale: 0.98, armSizeScale: 1.04, closeTorque: 10.0, liftTorque: 10.0, clawTipFriction: 1.01 },
   // #12 시노부 (난이도 5.5 · 경쾌 컴팩트 헤드 + 안정 팁)
   { redBarHalfZ: 0.440, outerBarHalfZ: 1.03, outerBarY: 1.07, headScale: 0.98, armLengthScale: 0.98, armSizeScale: 1.02, closeTorque: 3.3, liftTorque: 3.2, clawTipFriction: 0.68 },
-  // #13 마키마 3D 인형 (난이도 7.5 · 클래식 산더미 인형뽑기 · 집게힘/팁강도 +30%)
-  { redBarHalfZ: 0.455, outerBarHalfZ: 1.02, outerBarY: 1.06, headScale: 1.00, armLengthScale: 1.00, armSizeScale: 0.96, closeTorque: 5.3, liftTorque: 4.6, clawTipFriction: 0.88 },
+  // #13 마키마 3D 인형 (난이도 7.5 · 4방향 집게 클래식 산더미 · 잡는힘/유지힘 10Nm)
+  { redBarHalfZ: 0.455, outerBarHalfZ: 1.02, outerBarY: 1.06, headScale: 1.00, armLengthScale: 1.00, armSizeScale: 0.96, closeTorque: 10.0, liftTorque: 10.0, clawTipFriction: 0.88 },
 ] as const;
 
 export function getMachineProfile(machineIndex: number): MachineProfile {
@@ -210,7 +210,7 @@ export const PRIZE_SPECS: PrizeSpec[] = [
       { pos: [0.008, 0, -0.008], half: [0.467, 0.202, 0.21], w: 0.45 },
       { pos: [0.0, 0, 0.38], half: [0.488, 0.202, 0.147], w: 0.35 },
     ],
-    strategyTip: '클래식 3D 인형뽑기(16개 산더미)! 윗층 인형의 몸통·머리 중심을 집게로 정확히 물고 좌측 하단 WIN 구멍 위로 운반해 떨어뜨리세요.',
+    strategyTip: '클래식 3D 인형뽑기(36개 산더미 · 4방향 집게)! 윗층 인형의 몸통·머리 중심을 집게로 정확히 물고 좌측 하단 WIN 구멍 위로 운반해 떨어뜨리세요.',
     w: 1.06,
     h: 0.46,
     d: 1.08,
@@ -282,7 +282,7 @@ export const PRIZE_SPECS: PrizeSpec[] = [
       { pos: [0.033, 0, -0.011], half: [0.205, 0.194, 0.303], w: 0.44 },
       { pos: [-0.011, 0, 0.549], half: [0.143, 0.194, 0.212], w: 0.26 },
     ],
-    strategyTip: '고난도 클래식 3D 인형뽑기(16개 산더미)! 롱 실루엣과 약한 유지 토크 때문에 중심을 살짝만 벗어나도 운반 중 미끄러질 수 있어 정밀 조준이 핵심입니다.',
+    strategyTip: '고난도 클래식 3D 인형뽑기(36개 산더미 · 4방향 집게)! 롱 실루엣과 약한 유지 토크 때문에 중심을 살짝만 벗어나도 운반 중 미끄러질 수 있어 정밀 조준이 핵심입니다.',
     w: 0.52,
     h: 0.44,
     d: 1.56,
@@ -354,7 +354,7 @@ export const PRIZE_SPECS: PrizeSpec[] = [
       { pos: [0.0, 0, -0.01], half: [0.433, 0.194, 0.28], w: 0.44 },
       { pos: [-0.01, 0, 0.507], half: [0.423, 0.194, 0.196], w: 0.32 },
     ],
-    strategyTip: '클래식 3D 인형뽑기(16개 산더미)! 양갈래 트윈테일이 넓게 펼쳐져 있어 상단 몸통 중앙을 감싸듯 집어 좌측 WIN 구멍으로 운반하세요.',
+    strategyTip: '클래식 3D 인형뽑기(36개 산더미 · 4방향 집게)! 양갈래 트윈테일이 넓게 펼쳐져 있어 상단 몸통 중앙을 감싸듯 집어 좌측 WIN 구멍으로 운반하세요.',
     w: 0.94,
     h: 0.44,
     d: 1.44,
@@ -427,7 +427,7 @@ export const PRIZE_SPECS: PrizeSpec[] = [
       { pos: [-0.30, 0, 0.24], half: [0.15, 0.16, 0.30], w: 0.18 },
       { pos: [0.30, 0, 0.22], half: [0.14, 0.17, 0.28], w: 0.17 },
     ],
-    strategyTip: '입문용 클래식 3D 인형뽑기(16개 산더미)! 잡는 힘과 팁 마찰이 넉넉해 산더미 윗층 인형을 안정적으로 들어 올려 좌측 WIN 구멍으로 옮기기 좋습니다.',
+    strategyTip: '입문용 클래식 3D 인형뽑기(36개 산더미 · 4방향 집게)! 잡는 힘과 팁 마찰이 넉넉해 산더미 윗층 인형을 안정적으로 들어 올려 좌측 WIN 구멍으로 옮기기 좋습니다.',
     w: 0.96,
     h: 0.44,
     d: 1.36,
@@ -477,7 +477,7 @@ export const PRIZE_SPECS: PrizeSpec[] = [
       { pos: [0.011, 0, -0.011], half: [0.131, 0.194, 0.299], w: 0.40 },
       { pos: [-0.055, 0, 0.542], half: [0.091, 0.194, 0.210], w: 0.26 },
     ],
-    strategyTip: '클래식 3D 인형뽑기(16개 산더미)! 상체 쪽에 무게가 실린 롱 인형이므로 가슴~어깨 중심을 정확히 노려 좌측 WIN 구멍 위로 운반하세요.',
+    strategyTip: '클래식 3D 인형뽑기(36개 산더미 · 4방향 집게)! 상체 쪽에 무게가 실린 롱 인형이므로 가슴~어깨 중심을 정확히 노려 좌측 WIN 구멍 위로 운반하세요.',
     w: 0.53,
     h: 0.44,
     d: 1.54,
