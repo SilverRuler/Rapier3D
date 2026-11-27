@@ -130,6 +130,12 @@ export default function App() {
   const [recentLogsPage, setRecentLogsPage] = useState<number>(1);
   const [pagedRecentLogs, setPagedRecentLogs] = useState<RecentLogEntry[]>([]);
   const [isLoadingRecentLogs, setIsLoadingRecentLogs] = useState<boolean>(false);
+  const [allRecentLogs, setAllRecentLogs] = useState<RecentLogEntry[]>([]);
+  const [allTotalLogCount, setAllTotalLogCount] = useState<number>(0);
+  const [isAllLogsExpanded, setIsAllLogsExpanded] = useState<boolean>(false);
+  const [allLogsPage, setAllLogsPage] = useState<number>(1);
+  const [pagedAllLogs, setPagedAllLogs] = useState<RecentLogEntry[]>([]);
+  const [isLoadingAllLogs, setIsLoadingAllLogs] = useState<boolean>(false);
   const [gachaWinStats, setGachaWinStats] = useState<MemberWinStats[]>([]);
   const [usedWinsByMember, setUsedWinsByMember] = useState<Record<string, number>>({});
   const [availableGachaSolByMember, setAvailableGachaSolByMember] = useState<Record<string, number>>({});
@@ -167,6 +173,7 @@ export default function App() {
   const [isNickConfirmOpen, setIsNickConfirmOpen] = useState<boolean>(false);
   const [stateLoaded, setStateLoaded] = useState<boolean>(false);
   const [isMachineSuspended, setIsMachineSuspended] = useState<boolean>(false);
+  const [suspendedMachines, setSuspendedMachines] = useState<number[]>([]);
   const [isPresenceOpen, setIsPresenceOpen] = useState<boolean>(false);
   const [activeUsersCount, setActiveUsersCount] = useState<number>(0);
   const [resetCountdownSec, setResetCountdownSec] = useState<number | null>(null);
@@ -182,6 +189,7 @@ export default function App() {
   serverClockOffsetRef.current = serverClockOffset;
   const fetchSeqRef = useRef<number>(0);
   const logsFetchSeqRef = useRef<number>(0);
+  const allLogsFetchSeqRef = useRef<number>(0);
   const [isRefilling, setIsRefilling] = useState<boolean>(false);
   const [isResetting, setIsResetting] = useState<boolean>(false);
   const [isGranting, setIsGranting] = useState<boolean>(false);
@@ -290,6 +298,11 @@ export default function App() {
         }
         if (data.machineOps && typeof data.machineOps.suspended === 'boolean') {
           setIsMachineSuspended(data.machineOps.suspended);
+          setSuspendedMachines(
+            Array.isArray(data.machineOps.suspendedMachines)
+              ? data.machineOps.suspendedMachines
+              : []
+          );
         }
         if (Array.isArray(data.machines) && data.machines.length > 0) {
           setMachines(data.machines);
@@ -307,6 +320,12 @@ export default function App() {
             if (typeof data.totalLogCount === 'number') {
               setTotalLogCount(data.totalLogCount);
             }
+          }
+        }
+        if (Array.isArray(data.allRecentLogs)) {
+          setAllRecentLogs(data.allRecentLogs);
+          if (typeof data.allTotalLogCount === 'number') {
+            setAllTotalLogCount(data.allTotalLogCount);
           }
         }
         if (Array.isArray(data.gachaWinStats)) {
@@ -354,6 +373,39 @@ export default function App() {
       }
     }
   }, []);
+
+  const fetchAllLogsPage = useCallback(async (page: number) => {
+    const reqSeq = ++allLogsFetchSeqRef.current;
+    setIsLoadingAllLogs(true);
+    try {
+      const resp = await fetch(`/api/gacha/logs?page=${page}&limit=10&_t=${Date.now()}`, {
+        cache: 'no-store',
+      });
+      const data = await resp.json();
+      if (reqSeq !== allLogsFetchSeqRef.current) return;
+      if (data.success && Array.isArray(data.logs)) {
+        setPagedAllLogs(data.logs);
+        if (typeof data.totalCount === 'number') {
+          setAllTotalLogCount(data.totalCount);
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to fetch all gacha logs page:', e);
+    } finally {
+      if (reqSeq === allLogsFetchSeqRef.current) {
+        setIsLoadingAllLogs(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isAllLogsExpanded) return;
+    if (allLogsPage === 1) {
+      setPagedAllLogs(allRecentLogs);
+    } else {
+      fetchAllLogsPage(allLogsPage);
+    }
+  }, [isAllLogsExpanded, allLogsPage, allRecentLogs, fetchAllLogsPage]);
 
   useEffect(() => {
     if (!isRecentLogsExpanded) return;
@@ -457,12 +509,20 @@ export default function App() {
     handleSelectMachine(selectedMachineIndex + 1);
   }, [handleSelectMachine, selectedMachineIndex]);
 
+  const isSelectedMachineSuspended = useMemo(
+    () => suspendedMachines.includes(selectedMachineIndex),
+    [suspendedMachines, selectedMachineIndex]
+  );
+
   const machineSummaries = useMemo(() => {
     const approxNow = Date.now() + serverClockOffset;
+    const suspSet = new Set(suspendedMachines);
     return Array.from({ length: GACHA_MACHINE_COUNT }, (_, idx) => {
       const m = machines[idx];
-      const hasStock = m ? (m.items?.length ?? 0) > 0 : true;
+      const suspended = suspSet.has(idx);
+      const hasStock = suspended ? false : m ? (m.items?.length ?? 0) > 0 : true;
       const lockedBy =
+        !suspended &&
         m?.lock?.active &&
         !(activeTurnId && m.lock.turnId === activeTurnId) &&
         (!m.lock.expiresAt || m.lock.expiresAt >= approxNow)
@@ -473,13 +533,14 @@ export default function App() {
         shortName: GACHA_SLOT_SHORT_LABELS[idx] || `${idx + 1}번`,
         hasStock,
         lockedBy,
+        suspended,
       };
     });
-  }, [machines, serverClockOffset, activeTurnId]);
+  }, [machines, serverClockOffset, activeTurnId, suspendedMachines]);
 
-  // 전 기기 운영 중단 전환 시 진행 중인 모든 로컬 턴 및 조작 모달 즉시 강제 종료
+  // 전 기기 또는 현재 기기 운영 중단 전환 시 진행 중인 로컬 턴 및 조작 모달 즉시 강제 종료
   useEffect(() => {
-    if (!isMachineSuspended) return;
+    if (!isMachineSuspended && !isSelectedMachineSuspended) return;
     setActiveTurnId(null);
     setActiveTurnKey(null);
     setPendingNextTurnKey(null);
@@ -488,7 +549,7 @@ export default function App() {
     setIsNickConfirmOpen(false);
     setIsSolExchangeModalOpen(false);
     setPendingMultiPlayCount(null);
-  }, [isMachineSuspended]);
+  }, [isMachineSuspended, isSelectedMachineSuspended]);
 
   // 8초마다 하트비트 전송 (운영 중단 503 응답 시 즉시 턴 종료)
   useEffect(() => {
@@ -1329,6 +1390,170 @@ export default function App() {
           </div>
         </section>
 
+        {/* 전체 뽑기판 통합 최근 상황 로그 (평소 접기 1건 · 펼치기 시 10건/페이지 페이지네이션) */}
+        {(() => {
+          const LOGS_PAGE_SIZE = 10;
+          const latestAllLog = allRecentLogs[0] || null;
+          const collapsedMessage = latestAllLog?.message || '';
+          const collapsedTs = latestAllLog?.createdAt || null;
+
+          if (!collapsedMessage && allRecentLogs.length === 0) return null;
+
+          const effectiveTotal = Math.max(allTotalLogCount, allRecentLogs.length);
+          const totalPages = Math.max(1, Math.ceil(effectiveTotal / LOGS_PAGE_SIZE));
+          const safePage = Math.min(Math.max(1, allLogsPage), totalPages);
+          const displayed = safePage === 1 ? allRecentLogs.slice(0, LOGS_PAGE_SIZE) : pagedAllLogs;
+          const startIdx = (safePage - 1) * LOGS_PAGE_SIZE;
+
+          const getPages = (): Array<number | 'ellipsis'> => {
+            if (totalPages <= 5) return Array.from({ length: totalPages }, (_, i) => i + 1);
+            const pages: Array<number | 'ellipsis'> = [1];
+            const ws = Math.max(2, safePage - 1);
+            const we = Math.min(totalPages - 1, safePage + 1);
+            if (ws > 2) pages.push('ellipsis');
+            for (let p = ws; p <= we; p++) pages.push(p);
+            if (we < totalPages - 1) pages.push('ellipsis');
+            pages.push(totalPages);
+            return pages;
+          };
+
+          const collapsedTimeText = formatKstShortDateTime(collapsedTs);
+
+          return (
+            <div className="rounded-xl bg-slate-900/90 border border-amber-500/30 text-xs text-slate-300 overflow-hidden">
+              {!isAllLogsExpanded ? (
+                <div className="px-3 sm:px-4 py-2.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5 sm:gap-3">
+                  <div className="min-w-0 w-full sm:flex-1 leading-relaxed break-words">
+                    🌐 <strong className="text-amber-300 whitespace-nowrap">전체 최근 상황:</strong>{' '}
+                    <span>{collapsedMessage}</span>
+                  </div>
+                  <div className="flex items-center justify-end gap-2 shrink-0">
+                    {collapsedTimeText ? (
+                      <span className="text-[10px] text-slate-400 font-mono whitespace-nowrap">
+                        {collapsedTimeText}
+                      </span>
+                    ) : null}
+                    {effectiveTotal > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsAllLogsExpanded(true);
+                          setAllLogsPage(1);
+                        }}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-amber-500/40 text-amber-300 hover:text-amber-200 text-[10px] font-bold cursor-pointer transition-colors whitespace-nowrap"
+                      >
+                        <span>펼치기 ({effectiveTotal})</span>
+                        <ChevronDown className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3 sm:p-3.5 space-y-2.5">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <span className="font-black text-amber-300">🌐 전체 뽑기판 최근 상황 로그</span>
+                      <span className="px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-200 text-[10px] font-mono font-bold">
+                        총 {effectiveTotal}건
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsAllLogsExpanded(false);
+                        setAllLogsPage(1);
+                      }}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white text-[11px] font-bold cursor-pointer transition-colors"
+                    >
+                      <ChevronUp className="w-3.5 h-3.5" />
+                      <span>접기</span>
+                    </button>
+                  </div>
+
+                  {isLoadingAllLogs ? (
+                    <div className="py-6 flex items-center justify-center gap-2 text-slate-400">
+                      <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
+                      <span>전체 로그를 불러오는 중...</span>
+                    </div>
+                  ) : displayed.length === 0 ? (
+                    <p className="py-3 text-center text-slate-500">기록된 로그가 없습니다.</p>
+                  ) : (
+                    <div className="divide-y divide-slate-800/80 rounded-lg bg-slate-950/70 border border-slate-800/80">
+                      {displayed.map((log, idx) => {
+                        const rowTime = formatKstShortDateTime(log.createdAt);
+                        return (
+                          <div
+                            key={log.id || `all-${safePage}-${idx}`}
+                            className="px-3 py-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-3"
+                          >
+                            <span className="min-w-0 w-full sm:flex-1 text-slate-200 leading-snug break-words">
+                              {log.message}
+                            </span>
+                            {rowTime ? (
+                              <span className="text-[10px] text-slate-400 font-mono whitespace-nowrap shrink-0 self-end sm:self-center">
+                                {rowTime}
+                              </span>
+                            ) : null}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  <div className="pt-1 flex flex-col sm:flex-row items-center justify-between gap-2">
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      {effectiveTotal > 0
+                        ? `${startIdx + 1}–${Math.min(startIdx + LOGS_PAGE_SIZE, effectiveTotal)} / 총 ${effectiveTotal}건 (${safePage}/${totalPages} 페이지)`
+                        : '0건'}
+                    </span>
+                    {totalPages > 1 && (
+                      <div className="flex items-center gap-1 flex-wrap justify-center">
+                        <button
+                          type="button"
+                          disabled={safePage <= 1 || isLoadingAllLogs}
+                          onClick={() => setAllLogsPage(Math.max(1, safePage - 1))}
+                          className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white disabled:opacity-35 cursor-pointer"
+                        >
+                          <ChevronLeft className="w-3.5 h-3.5" />
+                        </button>
+                        {getPages().map((item, idx) =>
+                          item === 'ellipsis' ? (
+                            <span key={`all-log-ellipsis-${idx}`} className="px-1 text-xs text-slate-500">
+                              …
+                            </span>
+                          ) : (
+                            <button
+                              key={`all-log-page-${item}`}
+                              type="button"
+                              disabled={isLoadingAllLogs}
+                              onClick={() => setAllLogsPage(item)}
+                              className={`min-w-[28px] h-7 px-1.5 rounded-lg border text-[11px] font-mono font-black transition-all cursor-pointer ${
+                                item === safePage
+                                  ? 'bg-amber-500 text-slate-950 border-amber-300 shadow-sm'
+                                  : 'bg-slate-950/80 hover:bg-slate-800 border-slate-800 text-slate-300 hover:text-white'
+                              }`}
+                            >
+                              {item}
+                            </button>
+                          )
+                        )}
+                        <button
+                          type="button"
+                          disabled={safePage >= totalPages || isLoadingAllLogs}
+                          onClick={() => setAllLogsPage(Math.min(totalPages, safePage + 1))}
+                          className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white disabled:opacity-35 cursor-pointer"
+                        >
+                          <ChevronRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
         {/* 실시간 상태 알림 (평소 접기 1건 · 펼치기 시 10건/페이지 페이지네이션) */}
         {(() => {
           const LOGS_PAGE_SIZE = 10;
@@ -1514,7 +1739,8 @@ export default function App() {
           turnKey={activeTurnKey}
           onTurnFinish={handleTurnFinish}
           onStartTurnRequest={handleOpenStartModal}
-          canStartTurn={selectedBalance.tickets >= 1 && !activeTurnId && !isFinishing && !lockedByOther && !isMachineSuspended && !isResetLockdown}
+          canStartTurn={selectedBalance.tickets >= 1 && !activeTurnId && !isFinishing && !lockedByOther && !isMachineSuspended && !isSelectedMachineSuspended && !isResetLockdown}
+          isMachineSuspended={isSelectedMachineSuspended}
           selectedMember={selectedMember}
           selectedMemberTickets={selectedBalance.tickets}
           isStarting={isStarting}
@@ -2262,7 +2488,7 @@ export default function App() {
                       <p className="flex items-start gap-2">
                         <Sparkles className="w-4 h-4 text-pink-400 shrink-0 mt-0.5" />
                         <span>
-                          <strong className="text-pink-300">3D 인형 5종 클래식 인형뽑기 전면 전환!</strong> (<strong className="text-white">#2 마린 · #5 타야마 · #8 미쿠 · #11 산드로네 · #13 마키마</strong>) — 기존 하시와타시 Bar 대신 <strong className="text-amber-300">같은 3D 인형 36개를 바닥부터 높은 ㄱ자 외벽(1.55m)까지 꽉 채워 산처럼 쌓아두고</strong>, <strong className="text-cyan-300">4방향 집게(잡는힘/유지힘 10 N·m)</strong>로 집어 올려 <strong className="text-emerald-300">좌측 하단(초기 위치) WIN 구멍 위로 운반·낙하</strong>시키면 당첨됩니다! (재고 36개 소진 시 품절)
+                          <strong className="text-pink-300">3D 인형 5종 클래식 인형뽑기 전면 전환!</strong> (<strong className="text-white">#2 마린 · #5 타야마 · #8 미쿠 · #11 산드로네 · #13 마키마</strong>) — 기존 하시와타시 Bar 대신 <strong className="text-amber-300">같은 3D 인형 80개를 바닥부터 높은 ㄱ자 외벽(1.55m)까지 꽉 채워 산처럼 쌓아두고</strong>, <strong className="text-cyan-300">타원형 메탈 헤드 + 얇은 스틸 4방향 집게(10 N·m)</strong>로 집어 올려 <strong className="text-emerald-300">좌측 하단(초기 위치) WIN 구멍 위로 운반·낙하</strong>시키면 당첨됩니다! (재고 80개 소진 시 품절)
                         </span>
                       </p>
                       <p className="flex items-start gap-2">
@@ -2286,7 +2512,7 @@ export default function App() {
                       <p className="flex items-start gap-2">
                         <Radio className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
                         <span>
-                          <strong className="text-cyan-300">편의 기능 & UI 대개선:</strong> 상단 좌측 <strong className="text-white">[선택] / [랜덤]</strong>(재고 남은 기계 랜덤 선택) 버튼 추가, <strong className="text-white">뽑기판별 독립 최근 상황 로그</strong> 적용(모바일 가로 한 줄 정리), PC 뽑기 시작 시 <strong className="text-white">스크롤 간섭 없는 확대 집중 모드</strong> 자동 전환 및 모든 팝업 <strong className="text-white">Enter/Esc</strong> 단축키 지원!
+                          <strong className="text-cyan-300">편의 기능 & UI 대개선:</strong> 상단 좌측 <strong className="text-white">[선택] / [랜덤] / [관전]</strong>(진행 중 뽑기 자동 이동·다중 선택) 버튼 및 1~13번 탭 가로 스크롤·화살표 추가, <strong className="text-white">전체 통합 + 뽑기판별 이중 최근 상황 로그</strong> 적용(모바일 가로 한 줄 정리), PC 뽑기 시작 시 <strong className="text-white">스크롤 간섭 없는 확대 집중 모드</strong> 자동 전환 및 모든 팝업 <strong className="text-white">Enter/Esc</strong> 단축키 지원!
                         </span>
                       </p>
                     </div>

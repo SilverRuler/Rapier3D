@@ -20,6 +20,7 @@ import {
   Minimize2,
   LayoutGrid,
   Shuffle,
+  Radio,
   X,
 } from 'lucide-react';
 import { GachaBoxItem } from '@/types/gacha';
@@ -97,7 +98,9 @@ interface RapierUfoMachine3DProps {
     shortName: string;
     hasStock: boolean;
     lockedBy: string | null;
+    suspended?: boolean;
   }>;
+  isMachineSuspended?: boolean;
   isAdmin?: boolean;
   onAdminRefill?: () => void;
   onAdminReset?: () => void;
@@ -365,6 +368,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
   onNextMachine,
   onSelectMachine,
   machineSummaries = [],
+  isMachineSuspended = false,
   isAdmin = false,
   onAdminRefill,
   onAdminReset,
@@ -389,18 +393,38 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
   const [spectateLiveActive, setSpectateLiveActive] = useState(false);
   const [spectatePhase, setSpectatePhase] = useState<string>('');
   const [isMachinePickerOpen, setIsMachinePickerOpen] = useState(false);
+  const [isSpectatePickerOpen, setIsSpectatePickerOpen] = useState(false);
+  const [spectateToast, setSpectateToast] = useState<string>('');
+  const machineTabsRef = useRef<HTMLDivElement>(null);
+  const spectateToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showSpectateToast = useCallback((msg: string) => {
+    setSpectateToast(msg);
+    if (spectateToastTimerRef.current) clearTimeout(spectateToastTimerRef.current);
+    spectateToastTimerRef.current = setTimeout(() => setSpectateToast(''), 2600);
+  }, []);
 
   useEffect(() => {
-    if (!isMachinePickerOpen) return;
+    if (!isMachinePickerOpen && !isSpectatePickerOpen) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
         setIsMachinePickerOpen(false);
+        setIsSpectatePickerOpen(false);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [isMachinePickerOpen]);
+  }, [isMachinePickerOpen, isSpectatePickerOpen]);
+
+  useEffect(() => {
+    const el = machineTabsRef.current;
+    if (!el) return;
+    const activeBtn = el.querySelector<HTMLButtonElement>(`button[data-machine-idx="${machineIndex}"]`);
+    if (activeBtn) {
+      activeBtn.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' });
+    }
+  }, [machineIndex]);
 
   const phaseRef = useRef<CranePhase>('idle');
   const soundEnabledRef = useRef(true);
@@ -900,14 +924,31 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
         const activeProfile = getMachineProfile(machineIndex);
         const isPlushMachine = isPlushSlot(machineIndex);
         const headScale = activeProfile.headScale;
-        const armPivotX = 0.22 * headScale;
+        const armPivotX = (isPlushMachine ? 0.20 : 0.22) * headScale;
         const scaledArmSegments = ARM_SEGMENTS.map((seg) => ({
           ...seg,
           pos: [seg.pos[0] * activeProfile.armSizeScale, seg.pos[1] * activeProfile.armLengthScale, seg.pos[2]] as const,
-          half: [seg.half[0] * activeProfile.armSizeScale, seg.half[1] * activeProfile.armLengthScale, seg.half[2] * activeProfile.armSizeScale] as const,
+          half: isPlushMachine
+            ? seg.isTip
+              ? ([
+                  0.068 * activeProfile.armSizeScale,
+                  0.024 * activeProfile.armLengthScale,
+                  0.060 * activeProfile.armSizeScale,
+                ] as const)
+              : ([
+                  seg.half[0] * 0.40 * activeProfile.armSizeScale,
+                  seg.half[1] * activeProfile.armLengthScale,
+                  seg.half[2] * 0.42 * activeProfile.armSizeScale,
+                ] as const)
+            : ([
+                seg.half[0] * activeProfile.armSizeScale,
+                seg.half[1] * activeProfile.armLengthScale,
+                seg.half[2] * activeProfile.armSizeScale,
+              ] as const),
         }));
+        const armBottomReach = 0.935 * activeProfile.armLengthScale;
         const effectiveDropY = isPlushMachine
-          ? Number((0.88 + (activeProfile.armLengthScale - 1.0) * 0.86).toFixed(3))
+          ? Number((PLUSH_FLOOR_Y + armBottomReach + 0.045).toFixed(3))
           : Number((GACHA_PHYSICS.CLAW_DROP_Y + (activeProfile.armLengthScale - 1.0) * 0.86).toFixed(3));
         const effectiveLiftY = isPlushMachine ? 3.36 : GACHA_PHYSICS.CLAW_LIFT_Y;
 
@@ -1067,31 +1108,85 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
         ufoHeadGroup.scale.setScalar(headScale);
         scene.add(ufoHeadGroup);
 
-        const ufoTop = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.30, 0.469, 0.25, 24),
-          new THREE.MeshStandardMaterial({
-            color: '#10b981',
-            emissive: '#059669',
-            emissiveIntensity: 0.5,
-            metalness: 0.65,
-            roughness: 0.22,
-          })
-        );
-        ufoTop.position.set(0, 0.10, 0);
-        ufoTop.castShadow = true;
-        ufoHeadGroup.add(ufoTop);
+        if (isPlushMachine) {
+          // 3D 인형뽑기 전용: 얇은 스틸 4집게와 어울리는 브러시드 메탈 타원형 구 헤드
+          const ovalHead = new THREE.Mesh(
+            new THREE.SphereGeometry(0.37, 32, 24),
+            new THREE.MeshStandardMaterial({
+              color: '#cbd5e1',
+              emissive: '#0f172a',
+              emissiveIntensity: 0.2,
+              metalness: 0.92,
+              roughness: 0.16,
+            })
+          );
+          ovalHead.scale.set(1.06, 0.66, 1.06);
+          ovalHead.position.set(0, 0.11, 0);
+          ovalHead.castShadow = true;
+          ufoHeadGroup.add(ovalHead);
 
-        const ufoRing = new THREE.Mesh(
-          new THREE.TorusGeometry(0.438, 0.048, 12, 24),
-          new THREE.MeshStandardMaterial({
-            color: '#fbbf24',
-            emissive: '#f59e0b',
-            emissiveIntensity: 0.65,
-          })
-        );
-        ufoRing.rotation.x = Math.PI / 2;
-        ufoRing.position.set(0, -0.015, 0);
-        ufoHeadGroup.add(ufoRing);
+          const topCollar = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.11, 0.15, 0.12, 20),
+            new THREE.MeshStandardMaterial({
+              color: '#94a3b8',
+              metalness: 0.94,
+              roughness: 0.18,
+            })
+          );
+          topCollar.position.set(0, 0.34, 0);
+          ufoHeadGroup.add(topCollar);
+
+          const equatorRing = new THREE.Mesh(
+            new THREE.TorusGeometry(0.39, 0.018, 12, 32),
+            new THREE.MeshStandardMaterial({
+              color: '#34d399',
+              emissive: '#10b981',
+              emissiveIntensity: 0.85,
+              metalness: 0.6,
+              roughness: 0.2,
+            })
+          );
+          equatorRing.rotation.x = Math.PI / 2;
+          equatorRing.position.set(0, 0.10, 0);
+          ufoHeadGroup.add(equatorRing);
+
+          const bottomHub = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.24, 0.19, 0.07, 20),
+            new THREE.MeshStandardMaterial({
+              color: '#475569',
+              metalness: 0.9,
+              roughness: 0.22,
+            })
+          );
+          bottomHub.position.set(0, -0.05, 0);
+          ufoHeadGroup.add(bottomHub);
+        } else {
+          const ufoTop = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.30, 0.469, 0.25, 24),
+            new THREE.MeshStandardMaterial({
+              color: '#10b981',
+              emissive: '#059669',
+              emissiveIntensity: 0.5,
+              metalness: 0.65,
+              roughness: 0.22,
+            })
+          );
+          ufoTop.position.set(0, 0.10, 0);
+          ufoTop.castShadow = true;
+          ufoHeadGroup.add(ufoTop);
+
+          const ufoRing = new THREE.Mesh(
+            new THREE.TorusGeometry(0.438, 0.048, 12, 24),
+            new THREE.MeshStandardMaterial({
+              color: '#fbbf24',
+              emissive: '#f59e0b',
+              emissiveIntensity: 0.65,
+            })
+          );
+          ufoRing.rotation.x = Math.PI / 2;
+          ufoRing.position.set(0, -0.015, 0);
+          ufoHeadGroup.add(ufoRing);
+        }
 
         const debugLinesGeo = new THREE.BufferGeometry();
         const debugLinesMat = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.8 });
@@ -1099,7 +1194,9 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
         debugLinesMesh.visible = tuningRef.current.showColliders;
         scene.add(debugLinesMesh);
 
-        const armMetalMat = new THREE.MeshStandardMaterial({ color: '#e2e8f0', metalness: 0.88, roughness: 0.18 });
+        const armMetalMat = isPlushMachine
+          ? new THREE.MeshStandardMaterial({ color: '#f1f5f9', metalness: 0.96, roughness: 0.12 })
+          : new THREE.MeshStandardMaterial({ color: '#e2e8f0', metalness: 0.88, roughness: 0.18 });
         const armTipMat = new THREE.MeshStandardMaterial({ color: '#f97316', emissive: '#ea580c', emissiveIntensity: 0.3, roughness: 0.65 });
         const hingePinMat = new THREE.MeshStandardMaterial({ color: '#fbbf24', metalness: 0.9, roughness: 0.2 });
 
@@ -1200,13 +1297,15 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
         });
 
         if (isPlushMachine) {
+          // 3D 인형뽑기 바닥판과 ㄱ자 외벽은 상품뿐 아니라 크레인 집게/헤드와도 충돌시켜 바닥 관통 원천 차단
+          const plushStageGroup = makeGroup(G_BAR, G_PRIZE | G_ARM | G_HEAD);
           for (const s of plushFloorSlabs) {
             world.createCollider(
               Rapier.ColliderDesc.cuboid(s.w / 2, s.h / 2, s.d / 2)
                 .setTranslation(s.cx, s.cy, s.cz)
                 .setFriction(0.55)
                 .setRestitution(0)
-                .setCollisionGroups(makeGroup(G_BAR, G_PRIZE)),
+                .setCollisionGroups(plushStageGroup),
               barBody
             );
           }
@@ -1216,8 +1315,8 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
                 .setTranslation(g.cx, g.cy, g.cz)
                 .setFriction(0.22)
                 .setRestitution(0)
-                .setCollisionGroups(makeGroup(G_ENV, G_PRIZE)),
-              envBody
+                .setCollisionGroups(plushStageGroup),
+              barBody
             );
           }
         }
@@ -1322,7 +1421,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
             .setMass(1.25)
             .setFriction(0.55)
             .setRestitution(0)
-            .setCollisionGroups(makeGroup(G_HEAD, G_PRIZE)),
+            .setCollisionGroups(makeGroup(G_HEAD, isPlushMachine ? G_PRIZE | G_BAR : G_PRIZE)),
           headBody
         );
 
@@ -1376,7 +1475,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
                 .setMass(seg.mass)
                 .setFriction(tuningRef.current.clawTipFriction)
                 .setRestitution(0)
-                .setCollisionGroups(makeGroup(G_ARM, G_PRIZE)),
+                .setCollisionGroups(makeGroup(G_ARM, isPlushMachine ? G_PRIZE | G_BAR : G_PRIZE)),
               armBody
             );
             armColliders.push(col);
@@ -1410,8 +1509,12 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           data: GachaBoxItem;
           mesh: THREE.Mesh;
           body: RAPIER.RigidBody;
+          sharedVisual?: boolean;
         }
         const prizeEntities = new Map<string, PrizeEntity>();
+        const sharedPlushMatBySrc = new Map<string, THREE.MeshStandardMaterial>();
+        const sharedPlushGeoBySrc = new Map<string, THREE.BufferGeometry>();
+        const sharedPlushLoadingSrc = new Set<string>();
 
         const syncFromItems = (nextItems: GachaBoxItem[], forceRecreate = false) => {
           const nextIds = new Set(nextItems.map((it) => it.id));
@@ -1420,11 +1523,13 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
             if (forceRecreate || !nextIds.has(id)) {
               world.removeRigidBody(ent.body);
               scene.remove(ent.mesh);
-              ent.mesh.geometry.dispose();
-              if (Array.isArray(ent.mesh.material)) {
-                ent.mesh.material.forEach((m) => m.dispose());
-              } else {
-                ent.mesh.material.dispose();
+              if (!ent.sharedVisual) {
+                ent.mesh.geometry.dispose();
+                if (Array.isArray(ent.mesh.material)) {
+                  ent.mesh.material.forEach((m) => m.dispose());
+                } else {
+                  ent.mesh.material.dispose();
+                }
               }
               prizeEntities.delete(id);
             }
@@ -1449,37 +1554,52 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
                     z: it.quaternion[2],
                     w: it.quaternion[3],
                   })
-                  .setLinearDamping(0.20)
-                  .setAngularDamping(0.30)
-                  .setCcdEnabled(true)
+                  .setLinearDamping(plushItem ? 0.28 : 0.20)
+                  .setAngularDamping(plushItem ? 0.40 : 0.30)
+                  .setCcdEnabled(!plushItem)
               );
 
               const prizeGroup = makeGroup(G_PRIZE, G_ENV | G_BAR | G_PRIZE | G_HEAD | G_ARM);
               let mesh: THREE.Mesh;
 
               if (plushItem) {
-                const plushMat = createPlushMaterial(spec.imgSrc);
+                let plushMat = sharedPlushMatBySrc.get(spec.imgSrc);
+                if (!plushMat) {
+                  plushMat = createPlushMaterial(spec.imgSrc);
+                  sharedPlushMatBySrc.set(spec.imgSrc, plushMat);
+                }
                 const geoSrc = spec.plushGeoSrc || '/assets/sandrone_plush_geo.json';
-                const cachedGeo = cachedPlushGeoMap.get(geoSrc);
-                const initGeo = cachedGeo
-                  ? buildBufferGeometryFromPlushData(cachedGeo)
-                  : new THREE.BoxGeometry(dims.w * 0.7, dims.h, dims.d * 0.85);
-                mesh = new THREE.Mesh(initGeo, plushMat);
+                let sharedGeo = sharedPlushGeoBySrc.get(geoSrc);
+                if (!sharedGeo) {
+                  const cachedGeo = cachedPlushGeoMap.get(geoSrc);
+                  sharedGeo = cachedGeo
+                    ? buildBufferGeometryFromPlushData(cachedGeo)
+                    : new THREE.BoxGeometry(dims.w * 0.7, dims.h, dims.d * 0.85);
+                  sharedPlushGeoBySrc.set(geoSrc, sharedGeo);
+                }
+                mesh = new THREE.Mesh(sharedGeo, plushMat);
                 mesh.scale.setScalar(PLUSH_MOUND_SCALE);
                 mesh.castShadow = true;
                 mesh.receiveShadow = true;
                 scene.add(mesh);
 
-                if (!cachedGeo) {
-                  const targetId = it.id;
+                if (!cachedPlushGeoMap.get(geoSrc) && !sharedPlushLoadingSrc.has(geoSrc)) {
+                  sharedPlushLoadingSrc.add(geoSrc);
                   loadPlushGeoData(geoSrc).then((geoData) => {
                     if (!geoData || disposed) return;
-                    const liveEnt = prizeEntities.get(targetId);
-                    if (!liveEnt) return;
                     const nextGeo = buildBufferGeometryFromPlushData(geoData);
-                    liveEnt.mesh.geometry.dispose();
-                    liveEnt.mesh.geometry = nextGeo;
-                    liveEnt.mesh.scale.setScalar(PLUSH_MOUND_SCALE);
+                    const oldGeo = sharedPlushGeoBySrc.get(geoSrc);
+                    sharedPlushGeoBySrc.set(geoSrc, nextGeo);
+                    for (const liveEnt of prizeEntities.values()) {
+                      if (isPlushSlot(liveEnt.data.slotIndex)) {
+                        const s = getSpecForSlot(liveEnt.data.slotIndex);
+                        if ((s.plushGeoSrc || '/assets/sandrone_plush_geo.json') === geoSrc) {
+                          liveEnt.mesh.geometry = nextGeo;
+                          liveEnt.mesh.scale.setScalar(PLUSH_MOUND_SCALE);
+                        }
+                      }
+                    }
+                    if (oldGeo && oldGeo !== nextGeo) oldGeo.dispose();
                   });
                 }
 
@@ -1545,7 +1665,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
                 );
               }
 
-              ent = { data: { ...it }, mesh, body };
+              ent = { data: { ...it }, mesh, body, sharedVisual: plushItem };
               prizeEntities.set(it.id, ent);
             }
 
@@ -2583,65 +2703,145 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           </div>
         </div>
 
-        {machineSummaries.length > 0 && (
-          <div className="flex items-center justify-between gap-2 flex-wrap">
-            <div className="flex items-center gap-1.5 min-w-0 flex-1">
-              <button
-                type="button"
-                disabled={isCraneLockedToFront}
-                onClick={() => setIsMachinePickerOpen(true)}
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-gradient-to-r from-emerald-500/25 to-cyan-500/25 hover:from-emerald-500/35 hover:to-cyan-500/35 border border-emerald-400/60 text-emerald-200 text-[11px] font-black shrink-0 shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                title="전체 뽑기판 한눈에 보고 선택하기"
-              >
-                <LayoutGrid className="w-3.5 h-3.5" />
-                <span>선택</span>
-              </button>
-              <button
-                type="button"
-                disabled={isCraneLockedToFront || !machineSummaries.some((m) => m.hasStock)}
-                onClick={() => {
-                  const stocked = machineSummaries.filter((m) => m.hasStock);
-                  if (stocked.length === 0) return;
-                  const pool = stocked.length > 1 ? stocked.filter((m) => m.index !== machineIndex) : stocked;
-                  const picked = pool[Math.floor(Math.random() * pool.length)];
-                  if (picked) onSelectMachine?.(picked.index);
-                }}
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-gradient-to-r from-fuchsia-500/25 to-amber-500/25 hover:from-fuchsia-500/35 hover:to-amber-500/35 border border-fuchsia-400/60 text-fuchsia-200 text-[11px] font-black shrink-0 shadow-sm cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed transition-all"
-                title="재고가 남은 뽑기판 중 랜덤 선택"
-              >
-                <Shuffle className="w-3.5 h-3.5" />
-                <span>랜덤</span>
-              </button>
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar min-w-0 flex-1">
-                {machineSummaries.map((ms) => {
-                  const isActive = ms.index === machineIndex;
-                  return (
-                    <button
-                      key={ms.index}
-                      type="button"
-                      disabled={isCraneLockedToFront}
-                      onClick={() => onSelectMachine?.(ms.index)}
-                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-[11px] font-bold shrink-0 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
-                        isActive
-                          ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200 shadow-sm'
-                          : 'bg-slate-950/80 hover:bg-slate-800 border-slate-800 text-slate-400 hover:text-slate-200'
-                      }`}
-                    >
-                      <span
-                        className={`w-1.5 h-1.5 rounded-full ${
-                          ms.lockedBy ? 'bg-rose-400 animate-pulse' : ms.hasStock ? 'bg-emerald-400' : 'bg-slate-600'
+        {machineSummaries.length > 0 && (() => {
+          const liveMachines = machineSummaries.filter((m) => Boolean(m.lockedBy) && !m.suspended);
+          const availableRandomPool = machineSummaries.filter((m) => m.hasStock && !m.suspended);
+          const scrollTabsBy = (delta: number) => {
+            machineTabsRef.current?.scrollBy({ left: delta, behavior: 'smooth' });
+          };
+          return (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 w-full min-w-0">
+            <div className="flex items-center gap-1.5 min-w-0 w-full flex-1">
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  disabled={isCraneLockedToFront}
+                  onClick={() => setIsMachinePickerOpen(true)}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-gradient-to-r from-emerald-500/25 to-cyan-500/25 hover:from-emerald-500/35 hover:to-cyan-500/35 border border-emerald-400/60 text-emerald-200 text-[11px] font-black shrink-0 shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                  title="전체 뽑기판 한눈에 보고 선택하기"
+                >
+                  <LayoutGrid className="w-3.5 h-3.5" />
+                  <span>선택</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={isCraneLockedToFront || availableRandomPool.length === 0}
+                  onClick={() => {
+                    if (availableRandomPool.length === 0) return;
+                    const pool =
+                      availableRandomPool.length > 1
+                        ? availableRandomPool.filter((m) => m.index !== machineIndex)
+                        : availableRandomPool;
+                    const picked = pool[Math.floor(Math.random() * pool.length)];
+                    if (picked) onSelectMachine?.(picked.index);
+                  }}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-gradient-to-r from-fuchsia-500/25 to-amber-500/25 hover:from-fuchsia-500/35 hover:to-amber-500/35 border border-fuchsia-400/60 text-fuchsia-200 text-[11px] font-black shrink-0 shadow-sm cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed transition-all"
+                  title="재고가 남은 뽑기판 중 랜덤 선택"
+                >
+                  <Shuffle className="w-3.5 h-3.5" />
+                  <span>랜덤</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={isCraneLockedToFront}
+                  onClick={() => {
+                    if (liveMachines.length === 0) {
+                      showSpectateToast('현재 진행 중인 뽑기가 없습니다.');
+                      return;
+                    }
+                    if (liveMachines.length === 1) {
+                      onSelectMachine?.(liveMachines[0].index);
+                      return;
+                    }
+                    setIsSpectatePickerOpen(true);
+                  }}
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-xl border text-[11px] font-black shrink-0 shadow-sm cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed transition-all ${
+                    liveMachines.length > 0
+                      ? 'bg-gradient-to-r from-rose-500/30 to-amber-500/30 hover:from-rose-500/40 hover:to-amber-500/40 border-rose-400/70 text-rose-100'
+                      : 'bg-slate-900/90 hover:bg-slate-800 border-slate-700 text-slate-300'
+                  }`}
+                  title="현재 진행 중인 뽑기 실시간 자동 관전"
+                >
+                  <Radio className={`w-3.5 h-3.5 ${liveMachines.length > 0 ? 'text-rose-300 animate-pulse' : 'text-slate-400'}`} />
+                  <span>관전{liveMachines.length > 0 ? ` (${liveMachines.length})` : ''}</span>
+                </button>
+              </div>
+
+              <div className="flex items-center gap-1 min-w-0 flex-1">
+                <button
+                  type="button"
+                  onClick={() => scrollTabsBy(-240)}
+                  className="p-1 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 text-slate-300 hover:text-white shrink-0 cursor-pointer transition-colors"
+                  aria-label="뽑기판 목록 왼쪽으로 스크롤"
+                  title="왼쪽으로 스크롤"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
+                <div
+                  ref={machineTabsRef}
+                  onWheel={(e) => {
+                    const el = machineTabsRef.current;
+                    if (!el) return;
+                    if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+                      e.preventDefault();
+                      el.scrollLeft += e.deltaY;
+                    }
+                  }}
+                  className="flex items-center gap-1.5 overflow-x-auto touch-pan-x pb-0.5 min-w-0 flex-1"
+                  style={{ scrollbarWidth: 'thin' }}
+                >
+                  {machineSummaries.map((ms) => {
+                    const isActive = ms.index === machineIndex;
+                    return (
+                      <button
+                        key={ms.index}
+                        data-machine-idx={ms.index}
+                        type="button"
+                        disabled={isCraneLockedToFront}
+                        onClick={() => onSelectMachine?.(ms.index)}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-[11px] font-bold shrink-0 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+                          isActive
+                            ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200 shadow-sm'
+                            : ms.suspended
+                            ? 'bg-amber-950/35 hover:bg-amber-950/55 border-amber-500/40 text-amber-300/80'
+                            : 'bg-slate-950/80 hover:bg-slate-800 border-slate-800 text-slate-400 hover:text-slate-200'
                         }`}
-                      />
-                      <span>{ms.shortName}</span>
-                      {!ms.hasStock && <span className="text-[9px] text-rose-400 font-black">품절</span>}
-                    </button>
-                  );
-                })}
+                      >
+                        <span
+                          className={`w-1.5 h-1.5 rounded-full ${
+                            ms.suspended
+                              ? 'bg-amber-400'
+                              : ms.lockedBy
+                              ? 'bg-rose-400 animate-pulse'
+                              : ms.hasStock
+                              ? 'bg-emerald-400'
+                              : 'bg-slate-600'
+                          }`}
+                        />
+                        <span>{ms.shortName}</span>
+                        {ms.suspended ? (
+                          <span className="text-[9px] text-amber-300 font-black">점검</span>
+                        ) : !ms.hasStock ? (
+                          <span className="text-[9px] text-rose-400 font-black">품절</span>
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => scrollTabsBy(240)}
+                  className="p-1 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 text-slate-300 hover:text-white shrink-0 cursor-pointer transition-colors"
+                  aria-label="뽑기판 목록 오른쪽으로 스크롤"
+                  title="오른쪽으로 스크롤"
+                >
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
               </div>
             </div>
 
             {isAdmin && (
-              <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+              <div className="flex items-center gap-1.5 shrink-0 sm:ml-auto">
                 <button
                   type="button"
                   onClick={onAdminRefill}
@@ -2664,11 +2864,37 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
               </div>
             )}
           </div>
+          );
+        })()}
+        {spectateToast && (
+          <div className="px-3 py-1.5 rounded-xl bg-slate-800/95 border border-slate-600/80 text-amber-200 text-[11px] font-bold flex items-center justify-between gap-2">
+            <span>📡 {spectateToast}</span>
+            <button type="button" onClick={() => setSpectateToast('')} className="text-slate-400 hover:text-white cursor-pointer">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
         )}
       </div>
 
       <div className={`relative w-full bg-[#040c14] select-none ${isFocusedMode ? 'flex-1 min-h-[360px]' : 'h-[300px] sm:h-[450px]'}`}>
         <div ref={mountRef} className="w-full h-full" />
+
+        {isMachineSuspended && !isAdmin && (
+          <div className="absolute inset-0 z-40 bg-slate-950/90 backdrop-blur-md flex flex-col items-center justify-center p-5 text-center space-y-3">
+            <div className="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-400/50 flex items-center justify-center text-2xl">
+              🛠️
+            </div>
+            <div className="inline-flex items-center px-2.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-400/40 text-amber-300 text-[11px] font-black">
+              {machineIndex + 1}번 기기 운영 중단 · 점검중
+            </div>
+            <h3 className="text-base sm:text-lg font-black text-white">
+              [{machineIndex + 1}번] {machineLabel} 점검중입니다
+            </h3>
+            <p className="text-xs text-slate-300 max-w-sm leading-relaxed">
+              관리자에 의해 이 뽑기판만 일시 운영 중단 상태입니다. 상단 탭이나 <strong>[선택]</strong> 버튼으로 다른 정상 뽑기판을 이용해주세요!
+            </p>
+          </div>
+        )}
 
         <button
           type="button"
@@ -3066,7 +3292,11 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
                         🪙 {rewardSol} SOL
                       </div>
                       <div className="flex items-center gap-1 flex-wrap">
-                        {ms.lockedBy ? (
+                        {ms.suspended ? (
+                          <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[9px] font-bold">
+                            🛠️ 점검중
+                          </span>
+                        ) : ms.lockedBy ? (
                           <span className="px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 text-[9px] font-bold">
                             🔥 {ms.lockedBy}
                           </span>
@@ -3088,6 +3318,77 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           </div>
         </div>
       )}
+
+      {isSpectatePickerOpen && (() => {
+        const liveList = machineSummaries.filter((m) => Boolean(m.lockedBy) && !m.suspended);
+        return (
+          <div
+            className="fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm"
+            onClick={() => setIsSpectatePickerOpen(false)}
+          >
+            <div
+              className="bg-slate-900 border border-rose-500/45 w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[80vh]"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-4 py-3.5 bg-slate-950/90 border-b border-slate-800 flex items-center justify-between gap-2 shrink-0">
+                <div className="flex items-center gap-2">
+                  <Radio className="w-4 h-4 text-rose-400 animate-pulse" />
+                  <h3 className="text-sm sm:text-base font-black text-white">
+                    실시간 관전 선택 ({liveList.length}개 진행 중)
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsSpectatePickerOpen(false)}
+                  className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer"
+                  aria-label="닫기"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-3 sm:p-4 overflow-y-auto space-y-2">
+                {liveList.length === 0 ? (
+                  <p className="py-6 text-center text-xs text-slate-400">
+                    현재 진행 중인 뽑기가 없습니다.
+                  </p>
+                ) : (
+                  liveList.map((ms) => {
+                    const spec = PRIZE_SPECS[ms.index];
+                    return (
+                      <button
+                        key={ms.index}
+                        type="button"
+                        onClick={() => {
+                          onSelectMachine?.(ms.index);
+                          setIsSpectatePickerOpen(false);
+                        }}
+                        className="w-full p-3 rounded-2xl bg-slate-950/90 hover:bg-slate-800/90 border border-rose-500/35 hover:border-rose-400 text-left flex items-center gap-3 cursor-pointer transition-all"
+                      >
+                        {spec?.imgSrc && (
+                          <img
+                            src={spec.imgSrc}
+                            alt={ms.shortName}
+                            className="w-11 h-11 rounded-xl object-cover bg-slate-900 border border-slate-700 shrink-0"
+                          />
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <div className="text-xs sm:text-sm font-black text-white truncate">
+                            {ms.shortName}
+                          </div>
+                          <div className="text-[11px] text-rose-300 font-bold flex items-center gap-1 mt-0.5">
+                            <span className="w-2 h-2 rounded-full bg-rose-400 animate-pulse" />
+                            <span>{ms.lockedBy}님 뽑기 진행 중 · 클릭하여 관전</span>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };
