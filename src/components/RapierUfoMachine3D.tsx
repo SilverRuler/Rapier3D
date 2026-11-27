@@ -2267,13 +2267,21 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
             }
 
             const reachedTop = prevTargetY >= effectiveLiftY - 0.005;
+            if (isPlushMachine && !sim.plushStrongGripTurn) {
+              const liftProg = Math.max(0, Math.min(1, (sim.targetHeadY - effectiveDropY) / Math.max(0.5, effectiveLiftY - effectiveDropY)));
+              if (liftProg > 0.45) {
+                const softT = (liftProg - 0.45) / 0.55;
+                setArmTorques(tuningRef.current.liftTorque * (1.0 - 0.48 * softT));
+                setArmTargets(-0.02 + softT * 0.06);
+              }
+            }
             if (reachedTop) {
               if (isPlushMachine && !sim.liftTopBumpApplied) {
                 sim.liftTopBumpApplied = true;
-                const bumpScale = sim.plushStrongGripTurn ? 0.5 : 1.0;
-                const jx = (Math.random() - 0.5) * 3.2 * bumpScale;
-                const jz = (Math.random() - 0.5) * 3.2 * bumpScale;
-                headBody.applyImpulse({ x: jx, y: -3.2 * bumpScale, z: jz }, true);
+                const bumpScale = sim.plushStrongGripTurn ? 0.35 : 1.0;
+                const jx = (Math.random() - 0.5) * 4.8 * bumpScale;
+                const jz = (Math.random() - 0.5) * 4.8 * bumpScale;
+                headBody.applyImpulse({ x: jx, y: -4.8 * bumpScale, z: jz }, true);
                 playTone(260, 0.05, 'triangle', 0.05);
               }
               sim.liftTopHoldTimer += dt;
@@ -2291,8 +2299,12 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
                 sim.carryTraveled = 0;
                 sim.carryAxisStage = Math.abs(homeX - sim.gantryX) > 0.03 ? 'x' : 'z';
                 sim.carryAxisPauseTimer = 0;
-                setArmTorques(tuningRef.current.liftTorque);
-                setArmTargets(-0.02);
+                setArmTorques(
+                  sim.plushStrongGripTurn
+                    ? tuningRef.current.liftTorque * 0.94
+                    : tuningRef.current.liftTorque * 0.42
+                );
+                setArmTargets(sim.plushStrongGripTurn ? -0.02 : 0.04);
                 setCranePhase('carrying');
                 playTone(493.88, 0.1);
               } else {
@@ -2303,24 +2315,24 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
               }
             }
           } else if (curPhase === 'carrying') {
-            // 3D 인형뽑기 전용: (1) 이동거리 비례 토크 감쇠 + (2) X→Z 직각 2단 운반/진동 + (3) 집게 미세 이완 + (4) 22% 강력 그립 편차
+            // 3D 인형뽑기 전용: (1) 이동거리 비례 토크 감쇠 + (2) X→Z 직각 2단 운반/진동 + (3) 집게 이완 + (4) 22% 강력 그립 편차
             sim.phaseTimer += dt;
-            const dRatio = Math.min(1, sim.carryTraveled / 1.55);
+            const dRatio = Math.min(1, sim.carryTraveled / 1.05);
             const baseLift = tuningRef.current.liftTorque;
             const carryTorque = sim.plushStrongGripTurn
               ? baseLift * (0.94 - 0.36 * dRatio)
-              : baseLift * (0.62 - 0.56 * dRatio);
+              : baseLift * (0.42 - 0.39 * dRatio);
             const relaxedTargetAng = sim.plushStrongGripTurn
               ? -0.02 + dRatio * 0.04
-              : -0.02 + dRatio * 0.34;
+              : 0.04 + dRatio * 0.48;
 
             const isMovingStage = sim.carryAxisStage === 'x' || sim.carryAxisStage === 'z';
             const railRipple = isMovingStage
-              ? Math.sin(sim.phaseTimer * 26) * (sim.plushStrongGripTurn ? 0.008 : 0.032)
+              ? Math.sin(sim.phaseTimer * 28) * (sim.plushStrongGripTurn ? 0.008 : 0.052)
               : 0;
             sim.targetHeadY = effectiveLiftY + railRipple;
             winchJoint.setMotorMaxForce(220);
-            setArmTorques(Math.max(0.22, carryTorque));
+            setArmTorques(Math.max(0.10, carryTorque));
             setArmTargets(relaxedTargetAng);
 
             const carrySpeed = 1.24;
@@ -2334,9 +2346,9 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
                 sim.gantryX = homeX;
                 sim.carryAxisPauseTimer = 0;
                 if (Math.abs(homeZ - sim.gantryZ) > 0.03) {
-                  const jScale = sim.plushStrongGripTurn ? 0.45 : 1.0;
+                  const jScale = sim.plushStrongGripTurn ? 0.35 : 1.0;
                   headBody.applyImpulse(
-                    { x: -Math.sign(dx || 1) * 1.45 * jScale, y: -1.35 * jScale, z: 0 },
+                    { x: -Math.sign(dx || 1) * 2.2 * jScale, y: -2.1 * jScale, z: 0 },
                     true
                   );
                   sim.carryAxisStage = 'pause';
