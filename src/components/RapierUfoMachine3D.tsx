@@ -970,11 +970,11 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
         const isPlushMachine = isPlushSlot(machineIndex);
         const headScale = activeProfile.headScale;
         const armPivotX = (isPlushMachine ? 0.20 : 0.22) * headScale;
-        // 3D 뽑기 전용: 다리 길이 -30%, <> 꺾임 각도 완화(0.31/-0.35 rad), 얇은 스틸 암 + -30% 축소 팁
+        // 3D 뽑기 전용: 다리 길이 추가 -30%(10→7 비율), <> 꺾임 각도 완화(0.31/-0.35 rad), 얇은 스틸 암 + 소형 팁
         const PLUSH_ARM_BASE = [
-          { pos: [0.051, -0.160, 0] as const, rotZ: 0.31, half: [0.011, 0.168, 0.019] as const, mass: 0.09, isTip: false },
-          { pos: [0.045, -0.476, 0] as const, rotZ: -0.35, half: [0.010, 0.166, 0.021] as const, mass: 0.09, isTip: false },
-          { pos: [-0.048, -0.636, 0] as const, rotZ: 0.03, half: [0.048, 0.017, 0.042] as const, mass: 0.07, isTip: true },
+          { pos: [0.036, -0.112, 0] as const, rotZ: 0.31, half: [0.011, 0.118, 0.019] as const, mass: 0.08, isTip: false },
+          { pos: [0.032, -0.333, 0] as const, rotZ: -0.35, half: [0.010, 0.116, 0.021] as const, mass: 0.08, isTip: false },
+          { pos: [-0.040, -0.445, 0] as const, rotZ: 0.03, half: [0.048, 0.017, 0.042] as const, mass: 0.06, isTip: true },
         ];
         const scaledArmSegments = isPlushMachine
           ? PLUSH_ARM_BASE.map((seg) => ({
@@ -999,7 +999,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
                 seg.half[2] * activeProfile.armSizeScale,
               ] as const,
             }));
-        const armBottomReach = (isPlushMachine ? 0.655 : 0.935) * activeProfile.armLengthScale;
+        const armBottomReach = (isPlushMachine ? 0.462 : 0.935) * activeProfile.armLengthScale;
         const effectiveDropY = isPlushMachine
           ? Number((PLUSH_FLOOR_Y + armBottomReach + 0.045).toFixed(3))
           : Number((GACHA_PHYSICS.CLAW_DROP_Y + (activeProfile.armLengthScale - 1.0) * 0.86).toFixed(3));
@@ -1759,6 +1759,11 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           liftTopHoldTimer: 0,
           carryStopHoldTimer: 0,
           releaseClearTimer: 0,
+          plushStrongGripTurn: false,
+          liftTopBumpApplied: false,
+          carryTraveled: 0,
+          carryAxisStage: 'x' as 'x' | 'pause' | 'z' | 'done',
+          carryAxisPauseTimer: 0,
           stepAccum: 0,
         };
 
@@ -1783,6 +1788,11 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           sim.liftTopHoldTimer = 0;
           sim.carryStopHoldTimer = 0;
           sim.releaseClearTimer = 0;
+          sim.plushStrongGripTurn = false;
+          sim.liftTopBumpApplied = false;
+          sim.carryTraveled = 0;
+          sim.carryAxisStage = 'x';
+          sim.carryAxisPauseTimer = 0;
 
           const idQ = { x: 0, y: 0, z: 0, w: 1 };
           const zero = { x: 0, y: 0, z: 0 };
@@ -1849,6 +1859,11 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           sim.phaseTimer = 0;
           sim.descendStallTimer = 0;
           sim.lastHeadYForStall = headBody.translation().y;
+          sim.plushStrongGripTurn = isPlushMachine && Math.random() < 0.22;
+          sim.liftTopBumpApplied = false;
+          sim.carryTraveled = 0;
+          sim.carryAxisStage = 'x';
+          sim.carryAxisPauseTimer = 0;
           for (const ent of prizeEntities.values()) {
             if (isPlushMachine) {
               const p = ent.body.translation();
@@ -2193,16 +2208,29 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
             }
 
             const reachedTop = prevTargetY >= effectiveLiftY - 0.005;
-            if (reachedTop) sim.liftTopHoldTimer += dt;
-            else sim.liftTopHoldTimer = 0;
+            if (reachedTop) {
+              if (isPlushMachine && !sim.liftTopBumpApplied) {
+                sim.liftTopBumpApplied = true;
+                const jx = (Math.random() - 0.5) * 0.9;
+                const jz = (Math.random() - 0.5) * 0.9;
+                headBody.applyImpulse({ x: jx, y: -1.85, z: jz }, true);
+                playTone(260, 0.05, 'triangle', 0.05);
+              }
+              sim.liftTopHoldTimer += dt;
+            } else {
+              sim.liftTopHoldTimer = 0;
+            }
 
             // 최고점 도달 후 상승 관성이 잠잠해질 때까지(0.22s) 잠깐 정지한 뒤:
-            // - 3D 인형 산더미 모드: 집게를 문 상태 그대로 배출구(초기 위치)까지 운반(carrying)
+            // - 3D 인형 모드: 집게를 문 상태 그대로 배출구(초기 위치)까지 운반(carrying)
             // - 하시와타시 박스 모드: 제자리에서 집게 벌림(releasing)
             if ((reachedTop && sim.liftTopHoldTimer >= 0.22) || sim.phaseTimer >= 4.4) {
               sim.phaseTimer = 0;
               if (isPlushMachine) {
                 sim.carryStopHoldTimer = 0;
+                sim.carryTraveled = 0;
+                sim.carryAxisStage = Math.abs(homeX - sim.gantryX) > 0.03 ? 'x' : 'z';
+                sim.carryAxisPauseTimer = 0;
                 setArmTorques(tuningRef.current.liftTorque);
                 setArmTargets(-0.02);
                 setCranePhase('carrying');
@@ -2215,21 +2243,60 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
               }
             }
           } else if (curPhase === 'carrying') {
-            // 3D 인형뽑기 전용: 집게가 물고 있는 상태를 유지하며 배출구(초기 위치)까지 부드럽게 운반
+            // 3D 인형뽑기 전용: (1) 이동거리 비례 토크 감쇠 + (2) X→Z 직각 2단 운반/진동 + (3) 집게 미세 이완 + (4) 22% 강력 그립 편차
             sim.phaseTimer += dt;
-            sim.targetHeadY = effectiveLiftY;
-            winchJoint.setMotorMaxForce(220);
-            setArmTorques(tuningRef.current.liftTorque);
-            setArmTargets(-0.02);
+            const dRatio = Math.min(1, sim.carryTraveled / 2.2);
+            const baseLift = tuningRef.current.liftTorque;
+            const carryTorque = sim.plushStrongGripTurn
+              ? baseLift * (0.96 - 0.28 * dRatio)
+              : baseLift * (0.86 - 0.64 * dRatio);
+            const relaxedTargetAng = sim.plushStrongGripTurn
+              ? -0.02 + dRatio * 0.03
+              : -0.02 + dRatio * 0.16;
 
-            const dx = homeX - sim.gantryX;
-            const dz = homeZ - sim.gantryZ;
-            const dist = Math.hypot(dx, dz);
-            const carrySpeed = 1.15;
-            if (dist > 0.025) {
-              const step = Math.min(dist, carrySpeed * dt);
-              sim.gantryX += (dx / dist) * step;
-              sim.gantryZ += (dz / dist) * step;
+            const isMovingStage = sim.carryAxisStage === 'x' || sim.carryAxisStage === 'z';
+            const railRipple = isMovingStage
+              ? Math.sin(sim.phaseTimer * 24) * (sim.plushStrongGripTurn ? 0.006 : 0.018)
+              : 0;
+            sim.targetHeadY = effectiveLiftY + railRipple;
+            winchJoint.setMotorMaxForce(220);
+            setArmTorques(Math.max(0.8, carryTorque));
+            setArmTargets(relaxedTargetAng);
+
+            const carrySpeed = 1.24;
+            if (sim.carryAxisStage === 'x') {
+              const dx = homeX - sim.gantryX;
+              if (Math.abs(dx) > 0.025) {
+                const step = Math.min(Math.abs(dx), carrySpeed * dt);
+                sim.gantryX += Math.sign(dx) * step;
+                sim.carryTraveled += step;
+              } else {
+                sim.gantryX = homeX;
+                sim.carryAxisPauseTimer = 0;
+                if (Math.abs(homeZ - sim.gantryZ) > 0.03) {
+                  headBody.applyImpulse({ x: -Math.sign(dx || 1) * 0.65, y: -0.55, z: 0 }, true);
+                  sim.carryAxisStage = 'pause';
+                } else {
+                  sim.carryAxisStage = 'done';
+                }
+              }
+              sim.carryStopHoldTimer = 0;
+            } else if (sim.carryAxisStage === 'pause') {
+              sim.carryAxisPauseTimer += dt;
+              if (sim.carryAxisPauseTimer >= 0.15) {
+                sim.carryAxisStage = 'z';
+              }
+              sim.carryStopHoldTimer = 0;
+            } else if (sim.carryAxisStage === 'z') {
+              const dz = homeZ - sim.gantryZ;
+              if (Math.abs(dz) > 0.025) {
+                const step = Math.min(Math.abs(dz), carrySpeed * dt);
+                sim.gantryZ += Math.sign(dz) * step;
+                sim.carryTraveled += step;
+              } else {
+                sim.gantryZ = homeZ;
+                sim.carryAxisStage = 'done';
+              }
               sim.carryStopHoldTimer = 0;
             } else {
               sim.gantryX = homeX;
@@ -2237,7 +2304,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
               sim.carryStopHoldTimer += dt;
             }
 
-            if (sim.carryStopHoldTimer >= 0.22 || sim.phaseTimer >= 4.5) {
+            if (sim.carryStopHoldTimer >= 0.22 || sim.phaseTimer >= 6.0) {
               sim.phaseTimer = 0;
               sim.releaseClearTimer = 0;
               setArmTorques(Math.max(12, tuningRef.current.liftTorque * 2.2));
