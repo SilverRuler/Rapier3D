@@ -35,7 +35,10 @@ import {
   GACHA_SLOT_SHORT_LABELS,
   getBoxRewardAmount,
   getMachineLabel,
+  isPlushSlot,
+  PLUSH_MOUND_COUNT,
 } from '@/constants/gacha';
+import { getDefaultTuningForMachine } from '@/constants/prizes';
 import { GachaMachineState, GachaTicketBalance, GachaWinRecord } from '@/types/gacha';
 import { MemberWinStats } from '@/types/meal';
 import { RapierUfoMachine3D, TurnFinishPayload } from '@/components/RapierUfoMachine3D';
@@ -143,7 +146,8 @@ export default function App() {
   const [isLeaderboardOpen, setIsLeaderboardOpen] = useState<boolean>(false);
   const [isUfoNoticeOpen, setIsUfoNoticeOpen] = useState<boolean>(false);
   const [isPrizeInfoOpen, setIsPrizeInfoOpen] = useState<boolean>(false);
-  const [openNotice261126, setOpenNotice261126] = useState<boolean>(true);
+  const [openNotice261127, setOpenNotice261127] = useState<boolean>(true);
+  const [openNotice261126, setOpenNotice261126] = useState<boolean>(false);
   const [openNotice261125, setOpenNotice261125] = useState<boolean>(false);
   const [openNotice261124, setOpenNotice261124] = useState<boolean>(false);
   const [selectedNoticeBoxSlot, setSelectedNoticeBoxSlot] = useState<number | null>(null);
@@ -295,10 +299,15 @@ export default function App() {
         setTicketsByMember(data.ticketsByMember || {});
         setRecentWins(data.recentWins || []);
         if (Array.isArray(data.recentLogs)) {
-          setRecentLogs(data.recentLogs);
-        }
-        if (typeof data.totalLogCount === 'number') {
-          setTotalLogCount(data.totalLogCount);
+          if (
+            typeof data.recentLogsMachineIndex !== 'number' ||
+            data.recentLogsMachineIndex === presenceMetaRef.current.machineIndex
+          ) {
+            setRecentLogs(data.recentLogs);
+            if (typeof data.totalLogCount === 'number') {
+              setTotalLogCount(data.totalLogCount);
+            }
+          }
         }
         if (Array.isArray(data.gachaWinStats)) {
           setGachaWinStats(data.gachaWinStats);
@@ -319,13 +328,16 @@ export default function App() {
     }
   }, []);
 
-  const fetchRecentLogsPage = useCallback(async (page: number) => {
+  const fetchRecentLogsPage = useCallback(async (page: number, targetMachineIdx: number) => {
     const reqSeq = ++logsFetchSeqRef.current;
     setIsLoadingRecentLogs(true);
     try {
-      const resp = await fetch(`/api/gacha/logs?page=${page}&limit=10&_t=${Date.now()}`, {
-        cache: 'no-store',
-      });
+      const resp = await fetch(
+        `/api/gacha/logs?machine=${targetMachineIdx}&page=${page}&limit=10&_t=${Date.now()}`,
+        {
+          cache: 'no-store',
+        }
+      );
       const data = await resp.json();
       if (reqSeq !== logsFetchSeqRef.current) return;
       if (data.success && Array.isArray(data.logs)) {
@@ -348,9 +360,9 @@ export default function App() {
     if (recentLogsPage === 1) {
       setPagedRecentLogs(recentLogs);
     } else {
-      fetchRecentLogsPage(recentLogsPage);
+      fetchRecentLogsPage(recentLogsPage, selectedMachineIndex);
     }
-  }, [isRecentLogsExpanded, recentLogsPage, recentLogs, fetchRecentLogsPage]);
+  }, [isRecentLogsExpanded, recentLogsPage, recentLogs, selectedMachineIndex, fetchRecentLogsPage]);
 
   const handleSelectMember = (name: string) => {
     setSelectedMember(name);
@@ -424,11 +436,17 @@ export default function App() {
     (nextIdx: number) => {
       if (activeTurnId || isStarting || isFinishing) return;
       const wrapped = ((nextIdx % GACHA_MACHINE_COUNT) + GACHA_MACHINE_COUNT) % GACHA_MACHINE_COUNT;
+      presenceMetaRef.current = { ...presenceMetaRef.current, machineIndex: wrapped };
       setSelectedMachineIndex(wrapped);
       setStatusMessage('');
+      setRecentLogs([]);
+      setPagedRecentLogs([]);
+      setTotalLogCount(0);
+      setRecentLogsPage(1);
       localStorage.setItem('aial_gacha_machine_idx', String(wrapped));
+      fetchState();
     },
-    [activeTurnId, isStarting, isFinishing]
+    [activeTurnId, isStarting, isFinishing, fetchState]
   );
 
   const handlePrevMachine = useCallback(() => {
@@ -732,9 +750,10 @@ export default function App() {
   );
 
   const handleAdminRefill = async () => {
-    const curEmpty = (machine?.items?.length ?? 0) === 0;
+    const curCount = machine?.items?.length ?? 0;
+    const fullCount = isPlushSlot(selectedMachineIndex) ? PLUSH_MOUND_COUNT : 1;
     const label = getMachineLabel(selectedMachineIndex);
-    if (!curEmpty) {
+    if (curCount >= fullCount) {
       setStatusMessage(`[${selectedMachineIndex + 1}번 뽑기판] ${label}은(는) 이미 상품이 채워져 있습니다.`);
       return;
     }
@@ -1354,7 +1373,7 @@ export default function App() {
               {!isRecentLogsExpanded ? (
                 <div className="px-3 sm:px-4 py-2.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5 sm:gap-3">
                   <div className="min-w-0 w-full sm:flex-1 leading-relaxed break-words">
-                    📢 <strong className="text-cyan-300 whitespace-nowrap">최근 상황:</strong>{' '}
+                    📢 <strong className="text-cyan-300 whitespace-nowrap">최근 상황 ({GACHA_SLOT_SHORT_LABELS[selectedMachineIndex]}):</strong>{' '}
                     <span>{collapsedMessage}</span>
                   </div>
                   <div className="flex items-center justify-end gap-2 shrink-0">
@@ -1382,7 +1401,7 @@ export default function App() {
                 <div className="p-3 sm:p-3.5 space-y-2.5">
                   <div className="flex items-center justify-between gap-2 flex-wrap">
                     <div className="flex items-center gap-2">
-                      <span className="font-black text-cyan-300">📢 최근 상황 로그</span>
+                      <span className="font-black text-cyan-300">📢 최근 상황 로그 ({GACHA_SLOT_SHORT_LABELS[selectedMachineIndex]})</span>
                       <span className="px-2 py-0.5 rounded-full bg-cyan-500/15 border border-cyan-500/30 text-cyan-200 text-[10px] font-mono font-bold">
                         총 {effectiveTotalLogs}건
                       </span>
@@ -1489,6 +1508,7 @@ export default function App() {
         {/* 2. Rapier3D 3D UFO 크레인 머신 */}
         <RapierUfoMachine3D
           items={machine?.items || []}
+          tuning={getDefaultTuningForMachine(selectedMachineIndex)}
           isMyTurn={Boolean(activeTurnId) && !isFinishing && !pendingNextTurnKey}
           lockedByOther={lockedByOther}
           turnKey={activeTurnKey}
@@ -2212,8 +2232,69 @@ export default function App() {
               </div>
 
               <div className="p-5 space-y-3 overflow-y-auto text-xs sm:text-sm text-slate-200">
-                {/* 261126 공지 (오늘 날짜 · 기본 펼침) */}
-                <div className="bg-slate-950/85 rounded-2xl border border-emerald-500/45 overflow-hidden transition-all">
+                {/* 261127 공지 (최신 · 기본 펼침) */}
+                <div className="bg-slate-950/90 rounded-2xl border border-amber-500/50 overflow-hidden transition-all">
+                  <button
+                    type="button"
+                    onClick={() => setOpenNotice261127(!openNotice261127)}
+                    className="w-full px-4 py-3.5 flex items-center justify-between gap-2 text-left hover:bg-slate-900/60 transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 shrink-0">
+                        📌 261127 공지
+                      </span>
+                      <span className="text-xs sm:text-sm font-bold text-white truncate">
+                        3D 인형뽑기 전면 개편 · 13종 개별 물리 세팅 · 편의/UI 대개선
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-[11px] text-slate-400 font-mono hidden sm:inline">2026-11-27</span>
+                      {openNotice261127 ? (
+                        <ChevronUp className="w-4 h-4 text-amber-400 shrink-0" />
+                      ) : (
+                        <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
+                      )}
+                    </div>
+                  </button>
+
+                  {openNotice261127 && (
+                    <div className="px-4 pb-4 pt-3 space-y-2.5 border-t border-slate-800/80 text-slate-200 leading-relaxed font-medium">
+                      <p className="flex items-start gap-2">
+                        <Sparkles className="w-4 h-4 text-pink-400 shrink-0 mt-0.5" />
+                        <span>
+                          <strong className="text-pink-300">3D 인형 5종 클래식 인형뽑기 전면 전환!</strong> (<strong className="text-white">#2 마린 · #5 타야마 · #8 미쿠 · #11 산드로네 · #13 마키마</strong>) — 기존 하시와타시 Bar 대신 <strong className="text-amber-300">같은 3D 인형 5개를 산처럼 쌓아두고</strong>, 크레인으로 집어 올려 <strong className="text-emerald-300">좌측 하단(초기 위치) WIN 구멍 위로 운반·낙하</strong>시키면 당첨됩니다! (재고 5개 소진 시 품절)
+                        </span>
+                      </p>
+                      <p className="flex items-start gap-2">
+                        <Info className="w-4 h-4 text-violet-400 shrink-0 mt-0.5" />
+                        <span>
+                          <strong className="text-violet-300">13종 뽑기판별 고유 물리·크레인·Bar 세팅 적용:</strong> #1 페른을 기본값으로 두고 나머지 12개 뽑기판의 <strong className="text-white">4개 Bar 간격, 크레인 헤드 크기, 집게 길이/두께, 닫힘·유지 토크, 팁 마찰</strong>을 난이도에 맞춰 모두 다르게 튜닝했습니다. (상단 <strong>[뽑기정보]</strong>에서 확인 가능)
+                        </span>
+                      </p>
+                      <p className="flex items-start gap-2">
+                        <RefreshCw className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                        <span>
+                          <strong className="text-emerald-300">집게·낙하 물리 개선:</strong> 다양한 박스 높이에 대응하도록 <code className="text-amber-200">&lt;&gt;</code> 집게 암을 연장하고, 상단 정지 후 집게를 완전히 벌려 수직 낙하한 뒤 크레인이 복귀하도록 개선했습니다. 잡는힘·유지 토크도 현실화해 애매한 각도에서는 미끄러질 수 있습니다.
+                        </span>
+                      </p>
+                      <p className="flex items-start gap-2">
+                        <Gift className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                        <span>
+                          <strong className="text-amber-300">리워드 밸런스 재조정:</strong> 3D 인형 뽑기는 <strong className="text-white">0.004 ~ 0.008 SOL</strong>, 일반 피규어 박스 뽑기는 <strong className="text-white">0.003 ~ 0.010 SOL</strong> 범위에서 난이도별 재조정되었습니다.
+                        </span>
+                      </p>
+                      <p className="flex items-start gap-2">
+                        <Radio className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+                        <span>
+                          <strong className="text-cyan-300">편의 기능 & UI 대개선:</strong> 상단 좌측 <strong className="text-white">[선택] / [랜덤]</strong>(재고 남은 기계 랜덤 선택) 버튼 추가, <strong className="text-white">뽑기판별 독립 최근 상황 로그</strong> 적용(모바일 가로 한 줄 정리), PC 뽑기 시작 시 <strong className="text-white">스크롤 간섭 없는 확대 집중 모드</strong> 자동 전환 및 모든 팝업 <strong className="text-white">Enter/Esc</strong> 단축키 지원!
+                        </span>
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* 261126 공지 (기본 접힘) */}
+                <div className="bg-slate-950/80 rounded-2xl border border-slate-700/80 overflow-hidden transition-all">
                   <button
                     type="button"
                     onClick={() => setOpenNotice261126(!openNotice261126)}

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { X, Info, Box, Sparkles, Coins, Scale, Ruler, ArrowRight } from 'lucide-react';
-import { DEFAULT_PHYSICS_TUNING, PRIZE_SPECS } from '@/constants/prizes';
-import { getSandboxRedBarSpec } from '@/constants/gacha';
+import { DEFAULT_PHYSICS_TUNING, getMachineProfile, PRIZE_SPECS } from '@/constants/prizes';
+import { GACHA_PHYSICS, PLUSH_MOUND_COUNT } from '@/constants/gacha';
 
 interface GachaPrizeInfoModalProps {
   isOpen: boolean;
@@ -51,7 +51,7 @@ export const GachaPrizeInfoModal: React.FC<GachaPrizeInfoModalProps> = ({
                 </span>
               </h2>
               <p className="text-[11px] text-slate-400">
-                모든 뽑기판은 상품 통과폭에 맞춘 맞춤형 중앙 빨간 Bar 간격 + 실제 120Hz 물리 엔진이 적용됩니다.
+                피규어 박스 8종은 개별 4-Bar·크레인·토크 세팅(하시와타시), 3D 인형 5종은 5개 산더미 클래식 인형뽑기(WIN 구멍 운반) 방식입니다.
               </p>
             </div>
           </div>
@@ -106,7 +106,7 @@ export const GachaPrizeInfoModal: React.FC<GachaPrizeInfoModalProps> = ({
           </div>
 
           <div className="text-[10px] font-mono text-slate-400 flex items-center gap-2 flex-wrap">
-            <span>잡는힘 <strong className="text-emerald-300">{DEFAULT_PHYSICS_TUNING.closeTorque.toFixed(1)}</strong></span>
+            <span>기준(#1 페른) 잡는힘 <strong className="text-emerald-300">{DEFAULT_PHYSICS_TUNING.closeTorque.toFixed(1)}</strong></span>
             <span>·</span>
             <span>유지 <strong className="text-amber-300">{DEFAULT_PHYSICS_TUNING.liftTorque.toFixed(1)}</strong></span>
             <span>·</span>
@@ -114,15 +114,20 @@ export const GachaPrizeInfoModal: React.FC<GachaPrizeInfoModalProps> = ({
             <span>·</span>
             <span>링마찰 <strong className="text-rose-300">{DEFAULT_PHYSICS_TUNING.barRingFriction}μ</strong></span>
             <span>·</span>
-            <span>무게 <strong className="text-purple-300">{DEFAULT_PHYSICS_TUNING.massScale.toFixed(2)}×</strong></span>
+            <span className="text-violet-300">판별 개별 세팅</span>
           </div>
         </div>
 
         {/* 상품 스펙 카드 목록 */}
         <div className="p-4 sm:p-5 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-3">
           {filtered.map((spec) => {
-            const barSpec = getSandboxRedBarSpec(spec.index);
-            const effectiveMass = (spec.mass * DEFAULT_PHYSICS_TUNING.massScale).toFixed(2);
+            const prof = getMachineProfile(spec.index);
+            const redInnerGap = Math.max(0.1, (prof.redBarHalfZ - GACHA_PHYSICS.BAR_RADIUS) * 2);
+            const effectiveMass = (
+              spec.mass *
+              (spec.isPlush ? 0.72 : 1) *
+              DEFAULT_PHYSICS_TUNING.massScale
+            ).toFixed(2);
             const isCurrent = currentMachineIndex === spec.index;
             return (
               <div
@@ -196,14 +201,28 @@ export const GachaPrizeInfoModal: React.FC<GachaPrizeInfoModalProps> = ({
                     </span>
                   </div>
                   <div className="px-2.5 py-1.5 rounded-lg bg-slate-900/90 border border-slate-800 flex items-center justify-between gap-1">
-                    <span className="text-slate-400">빨간Bar 내경</span>
-                    <span className="text-rose-300 font-bold">
-                      {barSpec.physicsGap.toFixed(2)}m ({barSpec.passMode === 'side' ? '옆세우기' : '회전폭'})
+                    <span className="text-slate-400">{spec.isPlush ? '뽑기 방식' : '빨간Bar 내경'}</span>
+                    <span className={spec.isPlush ? 'text-pink-300 font-bold' : 'text-rose-300 font-bold'}>
+                      {spec.isPlush
+                        ? `산더미 ${PLUSH_MOUND_COUNT}개·WIN구멍`
+                        : `${redInnerGap.toFixed(2)}m (외곽 ${(prof.outerBarHalfZ * 2).toFixed(2)})`}
                     </span>
                   </div>
                   <div className="px-2.5 py-1.5 rounded-lg bg-slate-900/90 border border-slate-800 flex items-center justify-between gap-1">
-                    <span className="text-slate-400">표면 마찰</span>
-                    <span className="text-emerald-300 font-bold">{spec.friction.toFixed(2)} μ</span>
+                    <span className="text-slate-400">잡기/유지</span>
+                    <span className="text-amber-300 font-bold">
+                      {prof.closeTorque.toFixed(1)} / {prof.liftTorque.toFixed(1)}
+                    </span>
+                  </div>
+                  <div className="px-2.5 py-1.5 rounded-lg bg-slate-900/90 border border-slate-800 flex items-center justify-between gap-1">
+                    <span className="text-slate-400">헤드/집게</span>
+                    <span className="text-cyan-300 font-bold">
+                      {prof.headScale.toFixed(2)}× / {prof.armLengthScale.toFixed(2)}×
+                    </span>
+                  </div>
+                  <div className="px-2.5 py-1.5 rounded-lg bg-slate-900/90 border border-slate-800 flex items-center justify-between gap-1">
+                    <span className="text-slate-400">팁 마찰</span>
+                    <span className="text-emerald-300 font-bold">{prof.clawTipFriction.toFixed(2)} μ</span>
                   </div>
                 </div>
 

@@ -1,7 +1,8 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import { Sliders, RotateCcw, Trophy, Cpu, Layers, Sparkles, Eye, Info } from 'lucide-react';
 import {
-  SANDBOX_DEFAULT_PHYSICS_TUNING,
+  getDefaultTuningForMachine,
+  getMachineProfile,
   PhysicsTuning,
   PRIZE_SPECS,
 } from '@/constants/prizes';
@@ -12,7 +13,8 @@ import {
   GACHA_SLOT_LABELS,
   getBoxRewardAmount,
   getMachineLabel,
-  getSandboxRedBarSpec,
+  isPlushSlot,
+  PLUSH_MOUND_COUNT,
 } from '@/constants/gacha';
 import { GachaBoxItem } from '@/types/gacha';
 import { RapierUfoMachine3D, TurnFinishPayload } from '@/components/RapierUfoMachine3D';
@@ -32,7 +34,7 @@ export default function SandboxApp() {
   );
   const [turnSeq, setTurnSeq] = useState(0);
   const [activeTurnKey, setActiveTurnKey] = useState<string | null>(null);
-  const [tuning, setTuning] = useState<PhysicsTuning>(SANDBOX_DEFAULT_PHYSICS_TUNING);
+  const [tuning, setTuning] = useState<PhysicsTuning>(() => getDefaultTuningForMachine(0));
   const [showTuning, setShowTuning] = useState(true);
   const [isPrizeInfoOpen, setIsPrizeInfoOpen] = useState(false);
   const [totalPlays, setTotalPlays] = useState(0);
@@ -40,7 +42,22 @@ export default function SandboxApp() {
   const [winLogs, setWinLogs] = useState<WinLogEntry[]>([]);
 
   const currentItems = machineItems[machineIndex] || [];
-  const activeBarSpec = useMemo(() => getSandboxRedBarSpec(machineIndex), [machineIndex]);
+  const activeProfile = useMemo(() => getMachineProfile(machineIndex), [machineIndex]);
+  const isPlushMachine = isPlushSlot(machineIndex);
+
+  const selectMachine = useCallback(
+    (nextIdx: number) => {
+      if (activeTurnKey) return;
+      const wrapped = ((nextIdx % GACHA_MACHINE_COUNT) + GACHA_MACHINE_COUNT) % GACHA_MACHINE_COUNT;
+      setMachineIndex(wrapped);
+      setTuning((prev) => ({
+        ...getDefaultTuningForMachine(wrapped),
+        showColliders: prev.showColliders,
+        timeScale: prev.timeScale,
+      }));
+    },
+    [activeTurnKey]
+  );
 
   const handleStartTurn = useCallback(() => {
     if (activeTurnKey || currentItems.length === 0) return;
@@ -95,9 +112,10 @@ export default function SandboxApp() {
   }, [activeTurnKey, machineIndex]);
 
   const handleRefill = useCallback(() => {
-    if (activeTurnKey || currentItems.length > 0) return;
+    const fullCount = isPlushSlot(machineIndex) ? PLUSH_MOUND_COUNT : 1;
+    if (activeTurnKey || currentItems.length >= fullCount) return;
     handleRealign();
-  }, [activeTurnKey, currentItems.length, handleRealign]);
+  }, [activeTurnKey, currentItems.length, handleRealign, machineIndex]);
 
   const machineSummaries = useMemo(
     () =>
@@ -180,9 +198,9 @@ export default function SandboxApp() {
           machineLabel={GACHA_SLOT_LABELS[machineIndex] || getMachineLabel(machineIndex)}
           machineDifficulty={GACHA_SLOT_DIFFICULTY_TEXT[machineIndex] || '난이도 6.5'}
           machineRewardSol={getBoxRewardAmount(machineIndex)}
-          onPrevMachine={() => !activeTurnKey && setMachineIndex((i) => (i - 1 + GACHA_MACHINE_COUNT) % GACHA_MACHINE_COUNT)}
-          onNextMachine={() => !activeTurnKey && setMachineIndex((i) => (i + 1) % GACHA_MACHINE_COUNT)}
-          onSelectMachine={(idx) => !activeTurnKey && setMachineIndex(idx)}
+          onPrevMachine={() => selectMachine(machineIndex - 1)}
+          onNextMachine={() => selectMachine(machineIndex + 1)}
+          onSelectMachine={selectMachine}
           machineSummaries={machineSummaries}
           isAdmin={true}
           onAdminRefill={handleRefill}
@@ -199,7 +217,9 @@ export default function SandboxApp() {
                   <Sliders className="w-4 h-4 text-emerald-400" />
                   <span>Rapier3D 실시간 물리 파라미터 튜닝</span>
                   <span className="px-2 py-0.5 rounded-full bg-rose-500/15 border border-rose-400/40 text-rose-200 text-[10px] font-mono">
-                    빨간 Bar 내경 {activeBarSpec.physicsGap.toFixed(2)}m (통과폭 {activeBarSpec.passWidth.toFixed(2)}m · {activeBarSpec.passMode === 'side' ? '옆세우기' : '회전폭'})
+                    {isPlushMachine
+                      ? `3D 산더미 인형뽑기 · 헤드 ${activeProfile.headScale.toFixed(2)}x · 집게 길이 ${activeProfile.armLengthScale.toFixed(2)}x / 크기 ${activeProfile.armSizeScale.toFixed(2)}x`
+                      : `빨간 Bar ±${activeProfile.redBarHalfZ.toFixed(3)} / 외곽 ±${activeProfile.outerBarHalfZ.toFixed(2)} · 헤드 ${activeProfile.headScale.toFixed(2)}x · 집게 ${activeProfile.armLengthScale.toFixed(2)}x/${activeProfile.armSizeScale.toFixed(2)}x`}
                   </span>
                 </h2>
                 <div className="flex items-center gap-1.5">
@@ -217,7 +237,7 @@ export default function SandboxApp() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setTuning(SANDBOX_DEFAULT_PHYSICS_TUNING)}
+                    onClick={() => setTuning(getDefaultTuningForMachine(machineIndex))}
                     className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-[11px] font-bold cursor-pointer"
                   >
                     <RotateCcw className="w-3 h-3" />

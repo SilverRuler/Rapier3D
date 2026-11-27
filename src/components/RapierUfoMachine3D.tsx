@@ -23,8 +23,24 @@ import {
   X,
 } from 'lucide-react';
 import { GachaBoxItem } from '@/types/gacha';
-import { GACHA_PHYSICS, getBoxDimensions, getBoxRewardAmount, getSandboxRedBarHalfZ, isBoxAtInitialPose, isPlushSlot } from '@/constants/gacha';
-import { DEFAULT_PHYSICS_TUNING, PhysicsTuning, PRIZE_SPECS, PrizeSpec } from '@/constants/prizes';
+import {
+  GACHA_PHYSICS,
+  getBoxDimensions,
+  getBoxRewardAmount,
+  isBoxAtInitialPose,
+  isPlushSlot,
+  PLUSH_CHUTE_HOME_X,
+  PLUSH_CHUTE_HOME_Z,
+  PLUSH_FLOOR_Y,
+  PLUSH_MOUND_SCALE,
+} from '@/constants/gacha';
+import {
+  DEFAULT_PHYSICS_TUNING,
+  getMachineProfile,
+  PhysicsTuning,
+  PRIZE_SPECS,
+  PrizeSpec,
+} from '@/constants/prizes';
 import { isPrizeSpanningRedAndBlueBar } from '@/lib/gachaEffects';
 
 type CameraView = 'front' | 'top' | 'right';
@@ -38,6 +54,7 @@ export type CranePhase =
   | 'descending'
   | 'closing'
   | 'lifting'
+  | 'carrying'
   | 'releasing'
   | 'settling';
 
@@ -129,6 +146,7 @@ const LIVE_PHASE_LABELS: Record<string, string> = {
   descending: '집게 하강 중',
   closing: '상품 잡는 중',
   lifting: '들어올리는 중',
+  carrying: '배출구로 운반 중',
   releasing: '드랍 중',
   settling: '안정화 중',
 };
@@ -384,7 +402,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
   const cameraViewRef = useRef<CameraView>('front');
   const frontTiptoeDegRef = useRef(0);
   const tuningRef = useRef<PhysicsTuning>(tuning);
-  const targetRedBarHalfZ = getSandboxRedBarHalfZ(machineIndex);
+  const targetRedBarHalfZ = getMachineProfile(machineIndex).redBarHalfZ;
   const redBarHalfZRef = useRef<number>(targetRedBarHalfZ);
   const itemsRef = useRef<GachaBoxItem[]>(items);
   const onTurnFinishRef = useRef(onTurnFinish);
@@ -917,13 +935,30 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           roughness: 0.55,
         });
 
-        const initRedHalfZ = redBarHalfZRef.current;
-        const allBarSpecs = [
-          { y: GACHA_PHYSICS.BAR_Y, z: -initRedHalfZ, isOuter: false, sign: -1 as const },
-          { y: GACHA_PHYSICS.BAR_Y, z: initRedHalfZ, isOuter: false, sign: 1 as const },
-          { y: GACHA_PHYSICS.OUTER_BAR_Y, z: -GACHA_PHYSICS.OUTER_BAR_HALF_Z, isOuter: true, sign: -1 as const },
-          { y: GACHA_PHYSICS.OUTER_BAR_Y, z: GACHA_PHYSICS.OUTER_BAR_HALF_Z, isOuter: true, sign: 1 as const },
-        ];
+        const activeProfile = getMachineProfile(machineIndex);
+        const isPlushMachine = isPlushSlot(machineIndex);
+        const headScale = activeProfile.headScale;
+        const armPivotX = 0.22 * headScale;
+        const scaledArmSegments = ARM_SEGMENTS.map((seg) => ({
+          ...seg,
+          pos: [seg.pos[0] * activeProfile.armSizeScale, seg.pos[1] * activeProfile.armLengthScale, seg.pos[2]] as const,
+          half: [seg.half[0] * activeProfile.armSizeScale, seg.half[1] * activeProfile.armLengthScale, seg.half[2] * activeProfile.armSizeScale] as const,
+        }));
+        const effectiveDropY = isPlushMachine
+          ? Number((1.36 + (activeProfile.armLengthScale - 1.0) * 0.86).toFixed(3))
+          : Number((GACHA_PHYSICS.CLAW_DROP_Y + (activeProfile.armLengthScale - 1.0) * 0.86).toFixed(3));
+
+        const initRedHalfZ = activeProfile.redBarHalfZ;
+        const initOuterHalfZ = activeProfile.outerBarHalfZ;
+        const initOuterBarY = activeProfile.outerBarY;
+        const allBarSpecs = isPlushMachine
+          ? []
+          : [
+              { y: GACHA_PHYSICS.BAR_Y, z: -initRedHalfZ, isOuter: false, sign: -1 as const },
+              { y: GACHA_PHYSICS.BAR_Y, z: initRedHalfZ, isOuter: false, sign: 1 as const },
+              { y: initOuterBarY, z: -initOuterHalfZ, isOuter: true, sign: -1 as const },
+              { y: initOuterBarY, z: initOuterHalfZ, isOuter: true, sign: 1 as const },
+            ];
         const ringXPositions = [-1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5];
         const redBarMeshes: Array<{ mesh: THREE.Mesh; sign: -1 | 1 }> = [];
         const redRingMeshes: Array<{ mesh: THREE.Mesh; sign: -1 | 1 }> = [];
@@ -944,7 +979,83 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           }
         });
 
+        // 3D 인형뽑기 전용: 클래식 산더미 바닥판 + 좌전방 배출구 구멍(WIN) + 아크릴 칸막이
+        const plushFloorSlabs = isPlushMachine
+          ? [
+              { cx: 0.61, cy: PLUSH_FLOOR_Y - 0.06, cz: 0, w: 2.34, h: 0.12, d: 3.76 },
+              { cx: -1.17, cy: PLUSH_FLOOR_Y - 0.06, cz: -0.74, w: 1.22, h: 0.12, d: 2.28 },
+            ]
+          : [];
+        const plushChuteGuards = isPlushMachine
+          ? [
+              { cx: -0.56, cy: PLUSH_FLOOR_Y + 0.18, cz: 1.14, w: 0.06, h: 0.36, d: 1.48 },
+              { cx: -1.17, cy: PLUSH_FLOOR_Y + 0.18, cz: 0.40, w: 1.22, h: 0.36, d: 0.06 },
+            ]
+          : [];
+        if (isPlushMachine) {
+          const plushDeckMat = new THREE.MeshStandardMaterial({
+            color: '#1e293b',
+            roughness: 0.55,
+            metalness: 0.25,
+          });
+          for (const s of plushFloorSlabs) {
+            const m = new THREE.Mesh(new THREE.BoxGeometry(s.w, s.h, s.d), plushDeckMat);
+            m.position.set(s.cx, s.cy, s.cz);
+            m.receiveShadow = true;
+            cabinetGroup.add(m);
+          }
+          const guardGlassMat = new THREE.MeshPhysicalMaterial({
+            color: '#67e8f9',
+            transparent: true,
+            opacity: 0.32,
+            roughness: 0.12,
+            metalness: 0.1,
+          });
+          const guardRimMat = new THREE.MeshStandardMaterial({
+            color: '#34d399',
+            emissive: '#10b981',
+            emissiveIntensity: 0.8,
+          });
+          for (const g of plushChuteGuards) {
+            const gm = new THREE.Mesh(new THREE.BoxGeometry(g.w, g.h, g.d), guardGlassMat);
+            gm.position.set(g.cx, g.cy, g.cz);
+            cabinetGroup.add(gm);
+            const rim = new THREE.Mesh(new THREE.BoxGeometry(g.w + 0.015, 0.03, g.d + 0.015), guardRimMat);
+            rim.position.set(g.cx, PLUSH_FLOOR_Y + 0.365, g.cz);
+            cabinetGroup.add(rim);
+          }
+          // 배출구 WIN 표지판
+          const chuteSignCanvas = document.createElement('canvas');
+          chuteSignCanvas.width = 256;
+          chuteSignCanvas.height = 128;
+          const sctx = chuteSignCanvas.getContext('2d');
+          if (sctx) {
+            sctx.fillStyle = '#064e3b';
+            sctx.fillRect(0, 0, 256, 128);
+            sctx.strokeStyle = '#34d399';
+            sctx.lineWidth = 8;
+            sctx.strokeRect(6, 6, 244, 116);
+            sctx.fillStyle = '#fef08a';
+            sctx.font = 'bold 36px sans-serif';
+            sctx.textAlign = 'center';
+            sctx.fillText('🎁 WIN', 128, 58);
+            sctx.fillStyle = '#a7f3d0';
+            sctx.font = 'bold 26px sans-serif';
+            sctx.fillText('배출구 (DROP)', 128, 98);
+          }
+          const chuteSignTex = new THREE.CanvasTexture(chuteSignCanvas);
+          chuteSignTex.colorSpace = THREE.SRGBColorSpace;
+          const chuteSign = new THREE.Mesh(
+            new THREE.PlaneGeometry(1.06, 0.54),
+            new THREE.MeshBasicMaterial({ map: chuteSignTex })
+          );
+          chuteSign.rotation.x = -Math.PI / 2;
+          chuteSign.position.set(PLUSH_CHUTE_HOME_X, -1.42, PLUSH_CHUTE_HOME_Z);
+          cabinetGroup.add(chuteSign);
+        }
+
         const ufoHeadGroup = new THREE.Group();
+        ufoHeadGroup.scale.setScalar(headScale);
         scene.add(ufoHeadGroup);
 
         const ufoTop = new THREE.Mesh(
@@ -989,7 +1100,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           pin.rotation.x = Math.PI / 2;
           group.add(pin);
 
-          for (const seg of ARM_SEGMENTS) {
+          for (const seg of scaledArmSegments) {
             const geo = new THREE.BoxGeometry(seg.half[0] * 2, seg.half[1] * 2, seg.half[2] * 2);
             const mesh = new THREE.Mesh(geo, seg.isTip ? armTipMat : armMetalMat);
             mesh.position.set(side * seg.pos[0], seg.pos[1], seg.pos[2]);
@@ -1065,6 +1176,29 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           }
         });
 
+        if (isPlushMachine) {
+          for (const s of plushFloorSlabs) {
+            world.createCollider(
+              Rapier.ColliderDesc.cuboid(s.w / 2, s.h / 2, s.d / 2)
+                .setTranslation(s.cx, s.cy, s.cz)
+                .setFriction(0.55)
+                .setRestitution(0)
+                .setCollisionGroups(makeGroup(G_BAR, G_PRIZE)),
+              barBody
+            );
+          }
+          for (const g of plushChuteGuards) {
+            world.createCollider(
+              Rapier.ColliderDesc.cuboid(g.w / 2, g.h / 2, g.d / 2)
+                .setTranslation(g.cx, g.cy, g.cz)
+                .setFriction(0.22)
+                .setRestitution(0)
+                .setCollisionGroups(makeGroup(G_ENV, G_PRIZE)),
+              envBody
+            );
+          }
+        }
+
         [-GACHA_PHYSICS.CABINET_HALF_X - 0.1, GACHA_PHYSICS.CABINET_HALF_X + 0.1].forEach((wx) => {
           world.createCollider(
             Rapier.ColliderDesc.cuboid(0.1, 2.5, 2.3)
@@ -1108,9 +1242,9 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
         );
 
         // Articulated Crane Chain (Prismatic Y -> Gimbal X/Z -> 2× Revolute Z Claw Arms)
-        const homeX = GACHA_PHYSICS.CLAW_HOME_X;
+        const homeX = isPlushMachine ? PLUSH_CHUTE_HOME_X : GACHA_PHYSICS.CLAW_HOME_X;
         const homeY = GACHA_PHYSICS.CLAW_HOME_Y;
-        const homeZ = GACHA_PHYSICS.CLAW_HOME_Z;
+        const homeZ = isPlushMachine ? PLUSH_CHUTE_HOME_Z : GACHA_PHYSICS.CLAW_HOME_Z;
 
         const gantryBody = world.createRigidBody(
           Rapier.RigidBodyDesc.kinematicPositionBased().setTranslation(homeX, homeY, homeZ)
@@ -1148,7 +1282,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
             .setCanSleep(false)
         );
         world.createCollider(
-          Rapier.ColliderDesc.cylinder(0.125, 0.36)
+          Rapier.ColliderDesc.cylinder(0.125 * headScale, 0.36 * headScale)
             .setMass(1.25)
             .setFriction(0.55)
             .setRestitution(0)
@@ -1184,13 +1318,13 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
         const createClawArm = (side: -1 | 1) => {
           const armBody = world.createRigidBody(
             Rapier.RigidBodyDesc.dynamic()
-              .setTranslation(homeX + side * 0.22, homeY - 0.02, homeZ)
+              .setTranslation(homeX + side * armPivotX, homeY - 0.02, homeZ)
               .setLinearDamping(0.25)
               .setAngularDamping(0.45)
               .setCcdEnabled(true)
               .setCanSleep(false)
           );
-          for (const seg of ARM_SEGMENTS) {
+          for (const seg of scaledArmSegments) {
             const a = side * seg.rotZ;
             const col = world.createCollider(
               Rapier.ColliderDesc.cuboid(seg.half[0], seg.half[1], seg.half[2])
@@ -1205,7 +1339,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
             armColliders.push(col);
           }
 
-          const jData = Rapier.JointData.revolute({ x: side * 0.22, y: -0.02, z: 0 }, { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 1 });
+          const jData = Rapier.JointData.revolute({ x: side * armPivotX, y: -0.02, z: 0 }, { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 1 });
           jData.limitsEnabled = true;
           jData.limits = side > 0 ? [-0.10, 1.18] : [-1.18, 0.10];
           const joint = world.createImpulseJoint(jData, headBody, armBody, true) as RAPIER.RevoluteImpulseJoint;
@@ -1278,6 +1412,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
                   ? buildBufferGeometryFromPlushData(cachedGeo)
                   : new THREE.BoxGeometry(dims.w * 0.7, dims.h, dims.d * 0.85);
                 mesh = new THREE.Mesh(initGeo, plushMat);
+                mesh.scale.setScalar(PLUSH_MOUND_SCALE);
                 mesh.castShadow = true;
                 mesh.receiveShadow = true;
                 scene.add(mesh);
@@ -1291,9 +1426,11 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
                     const nextGeo = buildBufferGeometryFromPlushData(geoData);
                     liveEnt.mesh.geometry.dispose();
                     liveEnt.mesh.geometry = nextGeo;
+                    liveEnt.mesh.scale.setScalar(PLUSH_MOUND_SCALE);
                   });
                 }
 
+                const plushMass = totalMass * 0.72;
                 const parts =
                   spec.plushParts && spec.plushParts.length > 0
                     ? spec.plushParts
@@ -1305,9 +1442,17 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
                       ];
                 for (const p of parts) {
                   world.createCollider(
-                    Rapier.ColliderDesc.cuboid(p.half[0], p.half[1], p.half[2])
-                      .setTranslation(p.pos[0], p.pos[1], p.pos[2])
-                      .setMass(totalMass * (liveTuning.useComOffset ? 0.85 : 1.0) * p.w)
+                    Rapier.ColliderDesc.cuboid(
+                      p.half[0] * PLUSH_MOUND_SCALE,
+                      p.half[1] * PLUSH_MOUND_SCALE,
+                      p.half[2] * PLUSH_MOUND_SCALE
+                    )
+                      .setTranslation(
+                        p.pos[0] * PLUSH_MOUND_SCALE,
+                        p.pos[1] * PLUSH_MOUND_SCALE,
+                        p.pos[2] * PLUSH_MOUND_SCALE
+                      )
+                      .setMass(plushMass * (liveTuning.useComOffset ? 0.85 : 1.0) * p.w)
                       .setFriction(spec.friction)
                       .setRestitution(0)
                       .setCollisionGroups(prizeGroup),
@@ -1332,10 +1477,16 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
               }
 
               if (liveTuning.useComOffset) {
+                const comScale = plushItem ? PLUSH_MOUND_SCALE : 1;
+                const ballastMass = plushItem ? totalMass * 0.72 * 0.15 : totalMass * 0.18;
                 world.createCollider(
-                  Rapier.ColliderDesc.ball(0.05)
-                    .setTranslation(spec.comOffset[0] * 3.0, spec.comOffset[1] * 3.0, spec.comOffset[2] * 3.0)
-                    .setMass(totalMass * 0.18)
+                  Rapier.ColliderDesc.ball(0.05 * comScale)
+                    .setTranslation(
+                      spec.comOffset[0] * 3.0 * comScale,
+                      spec.comOffset[1] * 3.0 * comScale,
+                      spec.comOffset[2] * 3.0 * comScale
+                    )
+                    .setMass(ballastMass)
                     .setCollisionGroups(0),
                   body
                 );
@@ -1380,6 +1531,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           lastHeadYForStall: homeY,
           descendStallTimer: 0,
           liftTopHoldTimer: 0,
+          carryStopHoldTimer: 0,
           releaseClearTimer: 0,
           stepAccum: 0,
         };
@@ -1405,6 +1557,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           sim.nearNearTriggeredThisTurn = false;
           sim.descendStallTimer = 0;
           sim.liftTopHoldTimer = 0;
+          sim.carryStopHoldTimer = 0;
           sim.releaseClearTimer = 0;
 
           const idQ = { x: 0, y: 0, z: 0, w: 1 };
@@ -1427,12 +1580,12 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           headBody.setLinvel(zero, true);
           headBody.setAngvel(zero, true);
 
-          leftArm.body.setTranslation({ x: homeX - 0.22, y: homeY - 0.02, z: homeZ }, true);
+          leftArm.body.setTranslation({ x: homeX - armPivotX, y: homeY - 0.02, z: homeZ }, true);
           leftArm.body.setRotation(idQ, true);
           leftArm.body.setLinvel(zero, true);
           leftArm.body.setAngvel(zero, true);
 
-          rightArm.body.setTranslation({ x: homeX + 0.22, y: homeY - 0.02, z: homeZ }, true);
+          rightArm.body.setTranslation({ x: homeX + armPivotX, y: homeY - 0.02, z: homeZ }, true);
           rightArm.body.setRotation(idQ, true);
           rightArm.body.setLinvel(zero, true);
           rightArm.body.setAngvel(zero, true);
@@ -1659,7 +1812,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
             }
           } else if (curPhase === 'descending') {
             sim.phaseTimer += dt;
-            sim.targetHeadY = Math.max(GACHA_PHYSICS.CLAW_DROP_Y, sim.targetHeadY - 0.64 * dt);
+            sim.targetHeadY = Math.max(effectiveDropY, sim.targetHeadY - 0.64 * dt);
             winchJoint.setMotorMaxForce(tuningRef.current.downPressForce + 18);
 
             const actualHeadY = headBody.translation().y;
@@ -1670,7 +1823,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
               sim.lastHeadYForStall = actualHeadY;
             }
 
-            if (sim.targetHeadY <= GACHA_PHYSICS.CLAW_DROP_Y || sim.descendStallTimer >= 0.45) {
+            if (sim.targetHeadY <= effectiveDropY || sim.descendStallTimer >= 0.45) {
               sim.phaseTimer = 0;
               setArmTorques(tuningRef.current.closeTorque);
               setCranePhase('closing');
@@ -1743,8 +1896,48 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
             if (reachedTop) sim.liftTopHoldTimer += dt;
             else sim.liftTopHoldTimer = 0;
 
-            // 최고점 도달 후 상승 관성이 잠잠해질 때까지(0.22s) 잠깐 정지한 뒤 집게 벌림 시작
+            // 최고점 도달 후 상승 관성이 잠잠해질 때까지(0.22s) 잠깐 정지한 뒤:
+            // - 3D 인형 산더미 모드: 집게를 문 상태 그대로 배출구(초기 위치)까지 운반(carrying)
+            // - 하시와타시 박스 모드: 제자리에서 집게 벌림(releasing)
             if ((reachedTop && sim.liftTopHoldTimer >= 0.22) || sim.phaseTimer >= 3.8) {
+              sim.phaseTimer = 0;
+              if (isPlushMachine) {
+                sim.carryStopHoldTimer = 0;
+                setArmTorques(tuningRef.current.liftTorque);
+                setArmTargets(CLAW_CLOSE_TARGET);
+                setCranePhase('carrying');
+                playTone(493.88, 0.1);
+              } else {
+                sim.releaseClearTimer = 0;
+                setArmTorques(Math.max(12, tuningRef.current.liftTorque * 2.2));
+                setCranePhase('releasing');
+                playTone(392, 0.1);
+              }
+            }
+          } else if (curPhase === 'carrying') {
+            // 3D 인형뽑기 전용: 집게가 물고 있는 상태를 유지하며 배출구(초기 위치)까지 부드럽게 운반
+            sim.phaseTimer += dt;
+            sim.targetHeadY = GACHA_PHYSICS.CLAW_LIFT_Y;
+            winchJoint.setMotorMaxForce(220);
+            setArmTorques(tuningRef.current.liftTorque);
+            setArmTargets(CLAW_CLOSE_TARGET);
+
+            const dx = homeX - sim.gantryX;
+            const dz = homeZ - sim.gantryZ;
+            const dist = Math.hypot(dx, dz);
+            const carrySpeed = 1.15;
+            if (dist > 0.025) {
+              const step = Math.min(dist, carrySpeed * dt);
+              sim.gantryX += (dx / dist) * step;
+              sim.gantryZ += (dz / dist) * step;
+              sim.carryStopHoldTimer = 0;
+            } else {
+              sim.gantryX = homeX;
+              sim.gantryZ = homeZ;
+              sim.carryStopHoldTimer += dt;
+            }
+
+            if (sim.carryStopHoldTimer >= 0.22 || sim.phaseTimer >= 4.5) {
               sim.phaseTimer = 0;
               sim.releaseClearTimer = 0;
               setArmTorques(Math.max(12, tuningRef.current.liftTorque * 2.2));
@@ -1772,7 +1965,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
               const pv = ent.body.linvel();
               const horizDist = Math.hypot(pp.x - hpNow.x, pp.z - hpNow.z);
               const stillNearClaw = pp.y > hpNow.y - 1.25;
-              const stillFallingMidAir = pp.y > 1.32 && Math.abs(pv.y) > 0.2;
+              const stillFallingMidAir = pp.y > (isPlushMachine ? 0.68 : 1.32) && Math.abs(pv.y) > 0.2;
               if (horizDist < 1.25 && (stillNearClaw || stillFallingMidAir)) {
                 allPrizesClearedClaw = false;
                 break;
@@ -1917,10 +2110,11 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           aimRing.visible = showAim;
           aimBeam.visible = showAim;
           if (showAim) {
-            aimRing.position.set(hp.x, GACHA_PHYSICS.BAR_Y + 0.12, hp.z);
-            const beamH = Math.max(0.2, hp.y - (GACHA_PHYSICS.BAR_Y + 0.12));
+            const aimBaseY = isPlushMachine ? PLUSH_FLOOR_Y + 0.05 : GACHA_PHYSICS.BAR_Y + 0.12;
+            aimRing.position.set(hp.x, aimBaseY, hp.z);
+            const beamH = Math.max(0.2, hp.y - aimBaseY);
             aimBeam.scale.y = beamH / 1.7;
-            aimBeam.position.set(hp.x, GACHA_PHYSICS.BAR_Y + 0.12 + beamH / 2, hp.z);
+            aimBeam.position.set(hp.x, aimBaseY + beamH / 2, hp.z);
           }
 
           const desiredPose = getCameraPose(
@@ -2022,14 +2216,20 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
       try {
         (container as any).__rapierRo?.disconnect();
       } catch {}
-      if (renderer) renderer.dispose();
+      if (renderer) {
+        renderer.dispose();
+        if (renderer.domElement.parentNode === container) {
+          container.removeChild(renderer.domElement);
+        }
+      }
       if (worldRef) {
         try {
           worldRef.free();
         } catch {}
       }
+      setEngineReady(false);
     };
-  }, [playTone, setCranePhase, triggerExtremeDrr, triggerBalanceCatch, triggerNearNear, triggerFinishWin]);
+  }, [machineIndex, playTone, setCranePhase, triggerExtremeDrr, triggerBalanceCatch, triggerNearNear, triggerFinishWin]);
 
   const isCraneLockedToFront = isMyTurn || isFinishing || phase !== 'idle';
 
@@ -2183,11 +2383,19 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
       case 'closing':
         return '🤏 실제 Revolute 모터 집게로 상자를 잡는 중...';
       case 'lifting':
-        return '⬆ 물리 마찰과 토크로 상자를 들어올리고 있습니다!';
+        return isPlushSlot(machineIndex)
+          ? '⬆ 인형을 집어 들어올리는 중...'
+          : '⬆ 물리 마찰과 토크로 상자를 들어올리고 있습니다!';
+      case 'carrying':
+        return '🎁 인형을 문 채 배출구(구멍) 위로 운반하는 중...';
       case 'releasing':
       case 'settling':
         return droppedThisTurn > 0
-          ? '🎉 Bar 사이로 상자가 떨어졌습니다!! 결과 저장 중...'
+          ? isPlushSlot(machineIndex)
+            ? '🎉 배출구로 인형이 떨어졌습니다!! 결과 저장 중...'
+            : '🎉 Bar 사이로 상자가 떨어졌습니다!! 결과 저장 중...'
+          : isPlushSlot(machineIndex)
+          ? '⚖️ 인형이 자리를 잡는 중...'
           : '⚖️ 상자가 Bar 위에서 흔들리며 자리를 잡는 중...';
     }
   })();
