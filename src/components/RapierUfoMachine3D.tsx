@@ -925,28 +925,36 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
         const isPlushMachine = isPlushSlot(machineIndex);
         const headScale = activeProfile.headScale;
         const armPivotX = (isPlushMachine ? 0.20 : 0.22) * headScale;
-        const scaledArmSegments = ARM_SEGMENTS.map((seg) => ({
-          ...seg,
-          pos: [seg.pos[0] * activeProfile.armSizeScale, seg.pos[1] * activeProfile.armLengthScale, seg.pos[2]] as const,
-          half: isPlushMachine
-            ? seg.isTip
-              ? ([
-                  0.068 * activeProfile.armSizeScale,
-                  0.024 * activeProfile.armLengthScale,
-                  0.060 * activeProfile.armSizeScale,
-                ] as const)
-              : ([
-                  seg.half[0] * 0.40 * activeProfile.armSizeScale,
-                  seg.half[1] * activeProfile.armLengthScale,
-                  seg.half[2] * 0.42 * activeProfile.armSizeScale,
-                ] as const)
-            : ([
+        // 3D 뽑기 전용: 다리 길이 -30%, <> 꺾임 각도 완화(0.31/-0.35 rad), 얇은 스틸 암 + -30% 축소 팁
+        const PLUSH_ARM_BASE = [
+          { pos: [0.051, -0.160, 0] as const, rotZ: 0.31, half: [0.011, 0.168, 0.019] as const, mass: 0.09, isTip: false },
+          { pos: [0.045, -0.476, 0] as const, rotZ: -0.35, half: [0.010, 0.166, 0.021] as const, mass: 0.09, isTip: false },
+          { pos: [-0.048, -0.636, 0] as const, rotZ: 0.03, half: [0.048, 0.017, 0.042] as const, mass: 0.07, isTip: true },
+        ];
+        const scaledArmSegments = isPlushMachine
+          ? PLUSH_ARM_BASE.map((seg) => ({
+              ...seg,
+              pos: [
+                seg.pos[0] * activeProfile.armSizeScale,
+                seg.pos[1] * activeProfile.armLengthScale,
+                seg.pos[2],
+              ] as const,
+              half: [
                 seg.half[0] * activeProfile.armSizeScale,
                 seg.half[1] * activeProfile.armLengthScale,
                 seg.half[2] * activeProfile.armSizeScale,
-              ] as const),
-        }));
-        const armBottomReach = 0.935 * activeProfile.armLengthScale;
+              ] as const,
+            }))
+          : ARM_SEGMENTS.map((seg) => ({
+              ...seg,
+              pos: [seg.pos[0] * activeProfile.armSizeScale, seg.pos[1] * activeProfile.armLengthScale, seg.pos[2]] as const,
+              half: [
+                seg.half[0] * activeProfile.armSizeScale,
+                seg.half[1] * activeProfile.armLengthScale,
+                seg.half[2] * activeProfile.armSizeScale,
+              ] as const,
+            }));
+        const armBottomReach = (isPlushMachine ? 0.655 : 0.935) * activeProfile.armLengthScale;
         const effectiveDropY = isPlushMachine
           ? Number((PLUSH_FLOOR_Y + armBottomReach + 0.045).toFixed(3))
           : Number((GACHA_PHYSICS.CLAW_DROP_Y + (activeProfile.armLengthScale - 1.0) * 0.86).toFixed(3));
