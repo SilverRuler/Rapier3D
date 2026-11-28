@@ -534,7 +534,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
   const [spectatePhase, setSpectatePhase] = useState<string>('');
   const [isMachinePickerOpen, setIsMachinePickerOpen] = useState(false);
   const [pickerCategory, setPickerCategory] = useState<'all' | GachaMachineCategory>('all');
-  const [activeCategory, setActiveCategory] = useState<GachaMachineCategory>(() => getMachineCategory(machineIndex));
+  const [activeCategory, setActiveCategory] = useState<GachaMachineCategory | 'all'>(() => getMachineCategory(machineIndex));
   const [isSpectatePickerOpen, setIsSpectatePickerOpen] = useState(false);
   const [spectateToast, setSpectateToast] = useState<string>('');
   const machineTabsRef = useRef<HTMLDivElement>(null);
@@ -1901,7 +1901,6 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
         winchData.limits = isFourProngMachine ? [-3.05, 0.22] : [-2.55, 0.18];
         const winchJoint = world.createImpulseJoint(winchData, gantryBody, carrierBody, true) as RAPIER.PrismaticImpulseJoint;
         winchJoint.configureMotorModel(Rapier.MotorModel.ForceBased);
-        winchJoint.setMotorMaxForce(210);
         winchJoint.configureMotorPosition(0, 320, 48);
 
         const swayXData = Rapier.JointData.revolute({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }, { x: 1, y: 0, z: 0 });
@@ -1909,7 +1908,6 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
         swayXData.limits = [-0.26, 0.26];
         const swayXJoint = world.createImpulseJoint(swayXData, carrierBody, gimbalBody, true) as RAPIER.RevoluteImpulseJoint;
         swayXJoint.configureMotorModel(Rapier.MotorModel.ForceBased);
-        swayXJoint.setMotorMaxForce(18);
         swayXJoint.configureMotorPosition(0, 26, 7);
 
         const swayZData = Rapier.JointData.revolute({ x: 0, y: 0, z: 0 }, { x: 0, y: 0.18, z: 0 }, { x: 0, y: 0, z: 1 });
@@ -1917,7 +1915,6 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
         swayZData.limits = [-0.34, 0.34];
         const swayZJoint = world.createImpulseJoint(swayZData, gimbalBody, headBody, true) as RAPIER.RevoluteImpulseJoint;
         swayZJoint.configureMotorModel(Rapier.MotorModel.ForceBased);
-        swayZJoint.setMotorMaxForce(18);
         swayZJoint.configureMotorPosition(0, 24, 6.5);
 
         const armColliders: RAPIER.Collider[] = [];
@@ -1964,7 +1961,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           jData.limits = openSign > 0 ? [-0.10, 1.18] : [-1.18, 0.10];
           const joint = world.createImpulseJoint(jData, headBody, armBody, true) as RAPIER.RevoluteImpulseJoint;
           joint.configureMotorModel(Rapier.MotorModel.ForceBased);
-          joint.setMotorMaxForce(tuningRef.current.closeTorque);
+          joint.configureMotorModel(Rapier.MotorModel.ForceBased);
           joint.configureMotorPosition(openSign * CLAW_OPEN_ANGLE, 150, 22);
           return { body: armBody, joint, openSign };
         };
@@ -2200,7 +2197,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
         };
 
         const setArmTorques = (maxTorque: number) => {
-          for (const a of allArms) a.joint.setMotorMaxForce(maxTorque);
+          for (const a of allArms) a.joint.configureMotorModel(Rapier.MotorModel.ForceBased);
         };
 
         const setArmTargets = (openRad: number) => {
@@ -2269,7 +2266,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
             frontArm.body.setAngvel(zero, true);
           }
 
-          winchJoint.setMotorMaxForce(210);
+          // force controlled by configureMotorPosition args
           winchJoint.configureMotorPosition(0, 320, 48);
           setArmTorques(tuningRef.current.closeTorque);
           setArmTargets(CLAW_OPEN_ANGLE);
@@ -2316,7 +2313,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
           }
           setArmTorques(tuningRef.current.descendFlexTorque);
           setArmTargets(CLAW_OPEN_ANGLE);
-          winchJoint.setMotorMaxForce(tuningRef.current.downPressForce + 18);
+          // force tuned by configureMotorPosition
           setCranePhase('descending');
           playTone(640, 0.12);
         };
@@ -2579,7 +2576,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
                 ? Number((PUSHER_DECK_Y + armBottomReach + 0.045).toFixed(3))
                 : effectiveDropY;
             sim.targetHeadY = Math.max(localDropY, sim.targetHeadY - 0.64 * dt);
-            winchJoint.setMotorMaxForce(tuningRef.current.downPressForce + 18);
+            // force tuned by configureMotorPosition
 
             const actualHeadY = headBody.translation().y;
             if (actualHeadY - sim.targetHeadY > 0.14 && Math.abs(actualHeadY - sim.lastHeadYForStall) < 0.015) {
@@ -2611,7 +2608,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
               for (const ent of prizeEntities.values()) {
                 sim.liftStartY.set(ent.data.id, ent.body.translation().y);
               }
-              winchJoint.setMotorMaxForce(220);
+              // force tuned by configureMotorPosition
               setArmTorques(tuningRef.current.liftTorque);
               setArmTargets(activeCloseTarget);
               setCranePhase('lifting');
@@ -2621,7 +2618,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
             sim.phaseTimer += dt;
             const prevTargetY = sim.targetHeadY;
             sim.targetHeadY = Math.min(effectiveLiftY, sim.targetHeadY + 0.58 * dt);
-            winchJoint.setMotorMaxForce(220);
+            // force tuned by configureMotorPosition
 
             if (!isFourProngMachine && !sim.effectTriggeredThisTurn && sim.phaseTimer >= 0.12) {
               const hp = headBody.translation();
@@ -2733,7 +2730,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
               ? Math.sin(sim.phaseTimer * 28) * (isPusherMachine ? 0.005 : sim.plushStrongGripTurn ? 0.008 : 0.052)
               : 0;
             sim.targetHeadY = effectiveLiftY + railRipple;
-            winchJoint.setMotorMaxForce(220);
+            // force tuned by configureMotorPosition
             setArmTorques(Math.max(0.10, carryTorque));
             setArmTargets(relaxedTargetAng);
 
@@ -3408,14 +3405,15 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
 
         {machineSummaries.length > 0 && (() => {
           const liveMachines = machineSummaries.filter((m) => Boolean(m.lockedBy) && !m.suspended);
-          const categorySummaries = machineSummaries.filter((m) => getMachineCategory(m.index) === activeCategory);
+          const categorySummaries = machineSummaries.filter((m) => activeCategory === 'all' || getMachineCategory(m.index) === activeCategory);
           const availableRandomPool = categorySummaries.filter((m) => m.hasStock && !m.suspended);
+          const allCount = machineSummaries.length;
           const figureCount = machineSummaries.filter((m) => getMachineCategory(m.index) === 'figure').length;
           const plushCount = machineSummaries.filter((m) => getMachineCategory(m.index) === 'plush').length;
           const pusherCount = machineSummaries.filter((m) => getMachineCategory(m.index) === 'pusher').length;
-          const handleSelectCategory = (cat: GachaMachineCategory) => {
+          const handleSelectCategory = (cat: GachaMachineCategory | 'all') => {
             setActiveCategory(cat);
-            if (getMachineCategory(machineIndex) !== cat) {
+            if (cat !== 'all' && getMachineCategory(machineIndex) !== cat) {
               const catList = machineSummaries.filter((m) => getMachineCategory(m.index) === cat);
               const firstGood = catList.find((m) => m.hasStock && !m.suspended) || catList[0];
               if (firstGood) onSelectMachine?.(firstGood.index);
@@ -3429,6 +3427,7 @@ export const RapierUfoMachine3D: React.FC<RapierUfoMachine3DProps> = ({
             <div className="flex items-center gap-1.5 flex-wrap">
               {(
                 [
+                  { key: 'all' as const, label: '전체', icon: '🎛️', count: allCount, activeCls: 'bg-emerald-500/25 border-emerald-400 text-emerald-100 shadow-sm shadow-emerald-500/20' },
                   { key: 'figure' as const, label: '피규어', icon: '📦', count: figureCount, activeCls: 'bg-cyan-500/25 border-cyan-400 text-cyan-100 shadow-sm shadow-cyan-500/20' },
                   { key: 'plush' as const, label: '인형', icon: '🧸', count: plushCount, activeCls: 'bg-fuchsia-500/25 border-fuchsia-400 text-fuchsia-100 shadow-sm shadow-fuchsia-500/20' },
                   { key: 'pusher' as const, label: '밀판', icon: '⚡', count: pusherCount, activeCls: 'bg-amber-500/25 border-amber-400 text-amber-100 shadow-sm shadow-amber-500/20' },
