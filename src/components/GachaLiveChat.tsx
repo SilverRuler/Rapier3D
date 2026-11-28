@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { MessageSquare, Send, RefreshCw } from 'lucide-react';
 import { MEMBERS } from '@/constants/members';
 import { Member } from '@/types/meal';
@@ -36,7 +36,34 @@ export const GachaLiveChat: React.FC = () => {
 
   const listRef = useRef<HTMLDivElement>(null);
   const lastMsgIdRef = useRef<string>('');
-  const forceScrollRef = useRef<boolean>(true);
+  const pendingScrollBottomRef = useRef<boolean>(true);
+  const isNearBottomRef = useRef<boolean>(true);
+  const userScrolledUpRef = useRef<boolean>(false);
+  const hasUserInteractedRef = useRef<boolean>(false);
+
+  const scrollToBottom = useCallback(() => {
+    const el = listRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+    isNearBottomRef.current = true;
+  }, []);
+
+  const markUserInteraction = useCallback(() => {
+    hasUserInteractedRef.current = true;
+  }, []);
+
+  const handleListScroll = useCallback(() => {
+    const el = listRef.current;
+    if (!el) return;
+    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const nearBottom = distFromBottom < 65;
+    isNearBottomRef.current = nearBottom;
+    if (nearBottom) {
+      userScrolledUpRef.current = false;
+    } else if (hasUserInteractedRef.current) {
+      userScrolledUpRef.current = true;
+    }
+  }, []);
 
   useEffect(() => {
     try {
@@ -50,6 +77,31 @@ export const GachaLiveChat: React.FC = () => {
     } catch {}
   }, []);
 
+  // DOM 커밋 직후 최신 메시지(맨 아래)로 스크롤 고정 (초기 로드 · 브라우저 재오픈 · 신규 메시지 수신)
+  useLayoutEffect(() => {
+    if (!loaded || messages.length === 0) return;
+    if (!pendingScrollBottomRef.current) return;
+    pendingScrollBottomRef.current = false;
+
+    scrollToBottom();
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      if (!userScrolledUpRef.current) scrollToBottom();
+      raf2 = requestAnimationFrame(() => {
+        if (!userScrolledUpRef.current) scrollToBottom();
+      });
+    });
+    const t1 = window.setTimeout(() => {
+      if (!userScrolledUpRef.current) scrollToBottom();
+    }, 150);
+
+    return () => {
+      cancelAnimationFrame(raf1);
+      if (raf2) cancelAnimationFrame(raf2);
+      window.clearTimeout(t1);
+    };
+  }, [messages, loaded, scrollToBottom]);
+
   const fetchMessages = useCallback(async () => {
     if (typeof document !== 'undefined' && document.hidden) return;
     try {
@@ -61,24 +113,24 @@ export const GachaLiveChat: React.FC = () => {
         const lastId = next.length ? next[next.length - 1].id : '';
         const listEl = listRef.current;
         const wasNearBottom =
-          forceScrollRef.current ||
+          pendingScrollBottomRef.current ||
+          isNearBottomRef.current ||
           !listEl ||
           listEl.scrollHeight - listEl.scrollTop - listEl.clientHeight < 65;
 
+        const isFirstLoad = !lastMsgIdRef.current && next.length > 0;
+        const hasNewMessage = lastId !== lastMsgIdRef.current;
+        if (hasNewMessage) {
+          lastMsgIdRef.current = lastId;
+        }
+
+        if (isFirstLoad || (hasNewMessage && wasNearBottom)) {
+          userScrolledUpRef.current = false;
+          pendingScrollBottomRef.current = true;
+        }
+
         setMessages(next);
         setLoaded(true);
-
-        if (lastId !== lastMsgIdRef.current || forceScrollRef.current) {
-          lastMsgIdRef.current = lastId;
-          if (wasNearBottom) {
-            requestAnimationFrame(() => {
-              if (listRef.current) {
-                listRef.current.scrollTop = listRef.current.scrollHeight;
-              }
-            });
-          }
-          forceScrollRef.current = false;
-        }
       }
     } catch {}
   }, []);
@@ -86,15 +138,36 @@ export const GachaLiveChat: React.FC = () => {
   useEffect(() => {
     fetchMessages();
     const timer = setInterval(fetchMessages, 2500);
-    const onVis = () => {
-      if (!document.hidden) fetchMessages();
+
+    const snapAndRefresh = () => {
+      hasUserInteractedRef.current = false;
+      userScrolledUpRef.current = false;
+      pendingScrollBottomRef.current = true;
+      scrollToBottom();
+      requestAnimationFrame(scrollToBottom);
+      window.setTimeout(() => {
+        if (!userScrolledUpRef.current) scrollToBottom();
+      }, 150);
+      fetchMessages();
     };
+
+    const onVis = () => {
+      if (!document.hidden) {
+        snapAndRefresh();
+      }
+    };
+    const onPageShow = () => {
+      snapAndRefresh();
+    };
+
     document.addEventListener('visibilitychange', onVis);
+    window.addEventListener('pageshow', onPageShow);
     return () => {
       clearInterval(timer);
       document.removeEventListener('visibilitychange', onVis);
+      window.removeEventListener('pageshow', onPageShow);
     };
-  }, [fetchMessages]);
+  }, [fetchMessages, scrollToBottom]);
 
   const handleSelectSticker = (m: Member) => {
     if (selectedSticker?.id === m.id) {
@@ -146,8 +219,10 @@ export const GachaLiveChat: React.FC = () => {
         setErrorMsg(data?.message || '채팅 전송에 실패했습니다.');
       } else {
         setContent('');
-        forceScrollRef.current = true;
+        userScrolledUpRef.current = false;
+        pendingScrollBottomRef.current = true;
         await fetchMessages();
+        scrollToBottom();
       }
     } catch {
       setErrorMsg('네트워크 오류가 발생했습니다.');
@@ -168,7 +243,12 @@ export const GachaLiveChat: React.FC = () => {
         </h2>
         <button
           type="button"
-          onClick={fetchMessages}
+          onClick={() => {
+            userScrolledUpRef.current = false;
+            pendingScrollBottomRef.current = true;
+            fetchMessages();
+            scrollToBottom();
+          }}
           className="inline-flex items-center gap-1 text-[11px] text-slate-400 hover:text-emerald-300 cursor-pointer"
         >
           <RefreshCw className="w-3 h-3" />
@@ -179,6 +259,10 @@ export const GachaLiveChat: React.FC = () => {
       {/* 실시간 채팅 로그 */}
       <div
         ref={listRef}
+        onScroll={handleListScroll}
+        onWheel={markUserInteraction}
+        onTouchStart={markUserInteraction}
+        onPointerDown={markUserInteraction}
         className="h-64 sm:h-72 overflow-y-auto rounded-xl bg-slate-950/85 border border-slate-800 px-3 py-2.5 space-y-2"
       >
         {!loaded ? (
