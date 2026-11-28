@@ -34,9 +34,8 @@ import {
   GACHA_SLOT_REWARD_AMOUNTS,
   GACHA_SLOT_SHORT_LABELS,
   getBoxRewardAmount,
+  getMachineFullItemCount,
   getMachineLabel,
-  isPlushSlot,
-  PLUSH_MOUND_COUNT,
 } from '@/constants/gacha';
 import { getDefaultTuningForMachine } from '@/constants/prizes';
 import { GachaMachineState, GachaTicketBalance, GachaWinRecord } from '@/types/gacha';
@@ -812,7 +811,7 @@ export default function App() {
 
   const handleAdminRefill = async () => {
     const curCount = machine?.items?.length ?? 0;
-    const fullCount = isPlushSlot(selectedMachineIndex) ? PLUSH_MOUND_COUNT : 1;
+    const fullCount = getMachineFullItemCount(selectedMachineIndex);
     const label = getMachineLabel(selectedMachineIndex);
     if (curCount >= fullCount) {
       setStatusMessage(`[${selectedMachineIndex + 1}번 뽑기판] ${label}은(는) 이미 상품이 채워져 있습니다.`);

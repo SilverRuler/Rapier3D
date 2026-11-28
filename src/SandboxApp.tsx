@@ -12,9 +12,10 @@ import {
   GACHA_SLOT_DIFFICULTY_TEXT,
   GACHA_SLOT_LABELS,
   getBoxRewardAmount,
+  getMachineFullItemCount,
   getMachineLabel,
   isPlushSlot,
-  PLUSH_MOUND_COUNT,
+  isPusherSlot,
 } from '@/constants/gacha';
 import { GachaBoxItem } from '@/types/gacha';
 import { RapierUfoMachine3D, TurnFinishPayload } from '@/components/RapierUfoMachine3D';
@@ -44,6 +45,7 @@ export default function SandboxApp() {
   const currentItems = machineItems[machineIndex] || [];
   const activeProfile = useMemo(() => getMachineProfile(machineIndex), [machineIndex]);
   const isPlushMachine = isPlushSlot(machineIndex);
+  const isPusherMachine = isPusherSlot(machineIndex);
 
   const selectMachine = useCallback(
     (nextIdx: number) => {
@@ -112,7 +114,7 @@ export default function SandboxApp() {
   }, [activeTurnKey, machineIndex]);
 
   const handleRefill = useCallback(() => {
-    const fullCount = isPlushSlot(machineIndex) ? PLUSH_MOUND_COUNT : 1;
+    const fullCount = getMachineFullItemCount(machineIndex);
     if (activeTurnKey || currentItems.length >= fullCount) return;
     handleRealign();
   }, [activeTurnKey, currentItems.length, handleRealign, machineIndex]);
@@ -217,8 +219,10 @@ export default function SandboxApp() {
                   <Sliders className="w-4 h-4 text-emerald-400" />
                   <span>Rapier3D 실시간 물리 파라미터 튜닝</span>
                   <span className="px-2 py-0.5 rounded-full bg-rose-500/15 border border-rose-400/40 text-rose-200 text-[10px] font-mono">
-                    {isPlushMachine
-                      ? `3D 산더미 인형뽑기 · 헤드 ${activeProfile.headScale.toFixed(2)}x · 집게 길이 ${activeProfile.armLengthScale.toFixed(2)}x / 크기 ${activeProfile.armSizeScale.toFixed(2)}x`
+                    {isPusherMachine
+                      ? `포켓몬 밀판 (밀판 8 + 우측 20) · 헤드 ${activeProfile.headScale.toFixed(2)}x · 집게 ${activeProfile.armLengthScale.toFixed(2)}x`
+                      : isPlushMachine
+                      ? `인형 뽑기 · 헤드 ${activeProfile.headScale.toFixed(2)}x · 집게 길이 ${activeProfile.armLengthScale.toFixed(2)}x / 크기 ${activeProfile.armSizeScale.toFixed(2)}x`
                       : `빨간 Bar ±${activeProfile.redBarHalfZ.toFixed(3)} / 외곽 ±${activeProfile.outerBarHalfZ.toFixed(2)} · 헤드 ${activeProfile.headScale.toFixed(2)}x · 집게 ${activeProfile.armLengthScale.toFixed(2)}x/${activeProfile.armSizeScale.toFixed(2)}x`}
                   </span>
                 </h2>

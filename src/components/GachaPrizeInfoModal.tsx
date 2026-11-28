@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { X, Info, Box, Sparkles, Coins, Scale, Ruler, ArrowRight } from 'lucide-react';
+import { X, Info, Box, Sparkles, Coins, Scale, Ruler, ArrowRight, Layers } from 'lucide-react';
 import { DEFAULT_PHYSICS_TUNING, getMachineProfile, PRIZE_SPECS } from '@/constants/prizes';
-import { GACHA_PHYSICS, PLUSH_MOUND_COUNT } from '@/constants/gacha';
+import { GACHA_PHYSICS, PLUSH_MOUND_COUNT, PUSHER_DECK_COUNT, PUSHER_PIT_COUNT } from '@/constants/gacha';
 
 interface GachaPrizeInfoModalProps {
   isOpen: boolean;
@@ -16,15 +16,17 @@ export const GachaPrizeInfoModal: React.FC<GachaPrizeInfoModalProps> = ({
   currentMachineIndex,
   onSelectMachine,
 }) => {
-  const [filter, setFilter] = useState<'all' | 'box' | 'plush'>('all');
+  const [filter, setFilter] = useState<'all' | 'figure' | 'plush' | 'pusher'>('all');
 
   if (!isOpen) return null;
 
-  const boxCount = PRIZE_SPECS.filter((s) => !s.isPlush).length;
+  const figureCount = PRIZE_SPECS.filter((s) => !s.isPlush && !s.isPusher).length;
   const plushCount = PRIZE_SPECS.filter((s) => s.isPlush).length;
+  const pusherCount = PRIZE_SPECS.filter((s) => s.isPusher).length;
   const filtered = PRIZE_SPECS.filter((s) => {
-    if (filter === 'box') return !s.isPlush;
+    if (filter === 'figure') return !s.isPlush && !s.isPusher;
     if (filter === 'plush') return s.isPlush;
+    if (filter === 'pusher') return Boolean(s.isPusher);
     return true;
   });
 
@@ -47,11 +49,11 @@ export const GachaPrizeInfoModal: React.FC<GachaPrizeInfoModalProps> = ({
               <h2 className="text-base sm:text-lg font-black text-white flex items-center gap-2 flex-wrap">
                 <span>뽑기 상품 전체 스펙 정보</span>
                 <span className="px-2 py-0.5 rounded-full bg-violet-500/20 border border-violet-400/40 text-violet-200 text-[10px] font-mono">
-                  총 {PRIZE_SPECS.length}종 (박스 {boxCount} · 3D 인형 {plushCount})
+                  총 {PRIZE_SPECS.length}종 (피규어 {figureCount} · 인형 {plushCount} · 밀판 {pusherCount})
                 </span>
               </h2>
               <p className="text-[11px] text-slate-400">
-                피규어 박스 8종은 개별 4-Bar·크레인·토크 세팅(하시와타시), 3D 인형 5종은 5개 산더미 클래식 인형뽑기(WIN 구멍 운반) 방식입니다.
+                피규어 {figureCount}종(하시와타시 4-Bar) · 인형 {plushCount}종(산개 5개·WIN 구멍 운반) · 밀판 {pusherCount}종(캡슐 밀어내기)
               </p>
             </div>
           </div>
@@ -81,15 +83,15 @@ export const GachaPrizeInfoModal: React.FC<GachaPrizeInfoModalProps> = ({
             </button>
             <button
               type="button"
-              onClick={() => setFilter('box')}
+              onClick={() => setFilter('figure')}
               className={`inline-flex items-center gap-1 px-3 py-1 rounded-xl text-xs font-black border cursor-pointer transition-colors ${
-                filter === 'box'
+                filter === 'figure'
                   ? 'bg-emerald-500 text-slate-950 border-emerald-300'
                   : 'bg-slate-900 text-slate-300 border-slate-700 hover:border-slate-500'
               }`}
             >
               <Box className="w-3.5 h-3.5" />
-              <span>피규어 박스 ({boxCount})</span>
+              <span>피규어 ({figureCount})</span>
             </button>
             <button
               type="button"
@@ -101,7 +103,19 @@ export const GachaPrizeInfoModal: React.FC<GachaPrizeInfoModalProps> = ({
               }`}
             >
               <Sparkles className="w-3.5 h-3.5" />
-              <span>3D 입체 인형 ({plushCount})</span>
+              <span>인형 ({plushCount})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilter('pusher')}
+              className={`inline-flex items-center gap-1 px-3 py-1 rounded-xl text-xs font-black border cursor-pointer transition-colors ${
+                filter === 'pusher'
+                  ? 'bg-amber-400 text-slate-950 border-amber-200'
+                  : 'bg-slate-900 text-slate-300 border-slate-700 hover:border-slate-500'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>밀판 ({pusherCount})</span>
             </button>
           </div>
 
@@ -111,8 +125,6 @@ export const GachaPrizeInfoModal: React.FC<GachaPrizeInfoModalProps> = ({
             <span>유지 <strong className="text-amber-300">{DEFAULT_PHYSICS_TUNING.liftTorque.toFixed(1)}</strong></span>
             <span>·</span>
             <span>누르기 <strong className="text-cyan-300">{DEFAULT_PHYSICS_TUNING.downPressForce}N</strong></span>
-            <span>·</span>
-            <span>링마찰 <strong className="text-rose-300">{DEFAULT_PHYSICS_TUNING.barRingFriction}μ</strong></span>
             <span>·</span>
             <span className="text-violet-300">판별 개별 세팅</span>
           </div>
@@ -124,9 +136,9 @@ export const GachaPrizeInfoModal: React.FC<GachaPrizeInfoModalProps> = ({
             const prof = getMachineProfile(spec.index);
             const redInnerGap = Math.max(0.1, (prof.redBarHalfZ - GACHA_PHYSICS.BAR_RADIUS) * 2);
             const effectiveMass = (
-              spec.mass *
-              (spec.isPlush ? 0.72 : 1) *
-              DEFAULT_PHYSICS_TUNING.massScale
+              spec.isPusher
+                ? spec.mass
+                : spec.mass * (spec.isPlush ? 0.32 : 1) * DEFAULT_PHYSICS_TUNING.massScale
             ).toFixed(2);
             const isCurrent = currentMachineIndex === spec.index;
             return (
@@ -154,14 +166,16 @@ export const GachaPrizeInfoModal: React.FC<GachaPrizeInfoModalProps> = ({
                       </span>
                       <span
                         className={`px-1.5 py-0.5 rounded-md text-[10px] font-black border ${
-                          spec.isPlush
+                          spec.isPusher
+                            ? 'bg-amber-500/15 border-amber-400/50 text-amber-300'
+                            : spec.isPlush
                             ? 'bg-pink-500/15 border-pink-400/40 text-pink-300'
                             : spec.isSquare
                             ? 'bg-rose-500/15 border-rose-400/40 text-rose-300'
                             : 'bg-emerald-500/15 border-emerald-400/40 text-emerald-300'
                         }`}
                       >
-                        {spec.isPlush ? '🧸 3D 입체 인형' : spec.isSquare ? '📦 정사각 박스' : '📦 피규어 박스'}
+                        {spec.isPusher ? '⚡ 밀판 (캡슐)' : spec.isPlush ? '🧸 인형' : spec.isSquare ? '📦 피규어(정사각)' : '📦 피규어'}
                       </span>
                       {isCurrent && (
                         <span className="px-1.5 py-0.5 rounded-md bg-violet-500/25 text-violet-200 text-[10px] font-black">
@@ -201,10 +215,12 @@ export const GachaPrizeInfoModal: React.FC<GachaPrizeInfoModalProps> = ({
                     </span>
                   </div>
                   <div className="px-2.5 py-1.5 rounded-lg bg-slate-900/90 border border-slate-800 flex items-center justify-between gap-1">
-                    <span className="text-slate-400">{spec.isPlush ? '뽑기 방식' : '빨간Bar 내경'}</span>
-                    <span className={spec.isPlush ? 'text-pink-300 font-bold' : 'text-rose-300 font-bold'}>
-                      {spec.isPlush
-                        ? `산더미 ${PLUSH_MOUND_COUNT}개·WIN구멍`
+                    <span className="text-slate-400">{spec.isPusher || spec.isPlush ? '뽑기 방식' : '빨간Bar 내경'}</span>
+                    <span className={spec.isPusher ? 'text-amber-300 font-bold' : spec.isPlush ? 'text-pink-300 font-bold' : 'text-rose-300 font-bold'}>
+                      {spec.isPusher
+                        ? `밀판 ${PUSHER_DECK_COUNT}+우측 ${PUSHER_PIT_COUNT}`
+                        : spec.isPlush
+                        ? `산개 ${PLUSH_MOUND_COUNT}개·WIN구멍`
                         : `${redInnerGap.toFixed(2)}m (외곽 ${(prof.outerBarHalfZ * 2).toFixed(2)})`}
                     </span>
                   </div>
